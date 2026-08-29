@@ -1,6 +1,6 @@
 # dsh-subagent-codex-plus 需求文档
 
-> 状态：v1.0 定稿（R0-R3 全部确认，2026-08-29）
+> 状态：v1.1 定稿（R0-R4 全部确认；**R3 真网关 = V1 首发核心**，2026-08-29 用户定稿）
 > 项目：`/Users/robin/myProject/dsh-subagent-codex-plus`
 > 基底：fork 官方 `@deepseek-ai/dsh-subagent-codex`（master TS 源码 0.1.2-alpha.1，包/插件/provider 已改名）
 
@@ -9,6 +9,13 @@
 在 DeepSeek Harness（dsh，本机 0.1.0-rc.7）的统一界面里，把 Codex 变成一等公民：
 既能委派式调用（保留官方 one-shot），也能连续对话（排队/插入），还能**真网关直连**
 （用户输入输出与 Codex 直接互通，dsh 不经过任何大模型，只做搬运）。
+
+## V1 交付范围（2026-08-29 用户定稿：**真网关第一次就要上**）
+
+- **R3 真网关是 V1 首发核心，不后置、不做二期**；one-shot 委派（R0）作为同一包内的既有子功能保留（官方插件逻辑），但 V1 的交付主线是网关直连。
+- V1 一次性包含：R0（one-shot 委派基线）+ R1-A1（中间过程事件级透出）+ R2（连续对话/排队/插入 + 官方槽位 + 悬浮窗）+ R3（真网关 + 持久绑定）+ R4（视觉兜底）+ Q3（图片/附件透传）。
+- 实现顺序随之调整：**先打通真网关最小闭环（attach → 直连 → 排队/steer → 解除）**，再叠加 R1 透出与 R4 视觉兜底；one-shot 委派天然在包内，随时可启用。
+- A1-b（字节级流式渲染）仍为后续任务，不阻塞 V1。
 
 ## R0 基线（已确定）
 
@@ -56,7 +63,7 @@
 绑定后，dsh 界面上的所有输入输出与 Codex 直接互通，**dsh 不经过任何大模型，只做搬运**。
 
 **已定决策**
-- C1：**真网关**（传输级直通，非模型转发壳）。需要给 dsh 核心打补丁（消息路由绕过 agent loop）+ 验证 Web UI 流式渲染。
+- C1：**真网关**（传输级直通，非模型转发壳）。**已验证无需打 dsh 核心补丁**：注册自定义 `GatewayAgent`（实现 `send/followup/steer/inject/cancel`，内部转发 Codex app-server），`session.prompt` 的输入输出被它直通消费，dsh 模型不参与；UI 端以 `assistant/chunk`→`assistant/message` 事件流透出（详见 TECH-VERIFICATION.md §3）。
 - C2：新 Codex 会话参数 = dsh 当前会话 cwd + Codex 全局配置（模型/权限等）。
 - C3：**1:1 持久绑定**：dsh 会话 ID ↔ Codex 线程 ID 一一对应，绑定关系持久化，
   关机/重启后重新进入该 dsh 会话即自动直连同一个 Codex 会话。
