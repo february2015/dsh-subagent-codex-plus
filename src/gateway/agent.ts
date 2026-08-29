@@ -35,7 +35,8 @@ export interface GatewayAgentHost {
   readonly id: SessionId
   readonly session: Session
   readonly inbox: Inbox
-  readonly ctx: Context
+  /** Agent-scoped context; bound by the attach wiring after construction. */
+  readonly ctx: Context | undefined
   readonly options: AgentOptions
 }
 
@@ -65,7 +66,7 @@ export class GatewayAgent implements Agent {
   readonly options: AgentOptions
   readonly session: Session
   readonly inbox: Inbox
-  readonly ctx: Context
+  ctx: Context
 
   private pendingInject: string[] = []
   private readonly idleResolvers = new Set<() => void>()
@@ -79,7 +80,8 @@ export class GatewayAgent implements Agent {
     this.options = host.options
     this.session = host.session
     this.inbox = host.inbox
-    this.ctx = host.ctx
+    this.ctx = host.ctx ?? (undefined as unknown as Context)
+    void this.inbox
     this.gateway.on('turn', () => this.reconcileIdle())
   }
 
@@ -107,6 +109,11 @@ export class GatewayAgent implements Agent {
     for (const block of message.content) {
       if (block.type === 'text') this.pendingInject.push(block.text)
     }
+  }
+
+  /** Bind the agent-scoped context after construction (attach wiring). */
+  bindCtx(ctx: Context): void {
+    this.ctx = ctx
   }
 
   cancel(cause: AgentCancelCause, options?: CancelOptions): void {
@@ -153,6 +160,14 @@ export class GatewayAgent implements Agent {
       this.report(error)
       return
     }
+    // Mirror the loop agent's durable inbox recording so the dsh UI and log
+    // show the user's prompt even though no dsh model processes it.
+    try {
+      this.inbox.append(kind === 'steer' ? 'next-step' : 'next-turn', message)
+    } catch (error: unknown) {
+      this.report(error)
+      return
+    }
     void this.route(kind, inputs).catch((error: unknown) => this.report(error))
   }
 
@@ -169,7 +184,7 @@ export class GatewayAgent implements Agent {
 
   private report(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error)
-    this.ctx.logger?.warn?.(`[gateway] ${message}`)
+    ;(this.ctx as Context | undefined)?.logger?.warn?.(`[gateway] ${message}`)
   }
 
   private reconcileIdle(): void {

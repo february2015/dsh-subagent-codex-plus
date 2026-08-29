@@ -6,6 +6,8 @@
  * @module dsh-subagent-codex-plus
  */
 
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -21,11 +23,15 @@ import {
   CODEX_PERMISSION_MODES,
   DEFAULT_CODEX_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
+  codexAppServerArgv,
   codexStartupFailure,
   startCodexRun,
   type CodexPermissionMode,
   type CodexRunSpec,
 } from './run.ts'
+import { applyGatewayCommands } from './commands.ts'
+import { GatewayBindingStore } from './gateway/binding.ts'
+import { GatewayManager } from './gateway/manager.ts'
 
 export const name = 'subagent-codex-plus'
 export const inject = ['subagents', 'subprocess']
@@ -47,6 +53,12 @@ export interface Config {
   permissionMode?: CodexPermissionMode
   /** Grace in milliseconds for app-server process-tree termination. */
   disposeGraceMs?: number
+  /** Enable the true-gateway (attach/detach + auto-reattach), default true. */
+  gatewayEnabled?: boolean
+  /** Gateway binding store file (default `$DSH_HOME/codex-plus-gateway.json`). */
+  gatewayBindingFile?: string
+  /** Approval policy for gateway turns (default `never`). */
+  gatewayApprovalPolicy?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -56,9 +68,12 @@ export const Config: z<Config> = z.object({
   permissionMode: z.union([...CODEX_PERMISSION_MODES])
     .default(DEFAULT_CODEX_PERMISSION_MODE),
   disposeGraceMs: z.number().default(DEFAULT_DISPOSE_GRACE_MS),
+  gatewayEnabled: z.boolean().default(true),
+  gatewayBindingFile: z.string().min(1),
+  gatewayApprovalPolicy: z.string().min(1),
 })
 
-type ResolvedConfig = Omit<Required<Config>, 'model'> & Pick<Config, 'model'>
+type ResolvedConfig = Omit<Required<Config>, 'model' | 'gatewayEnabled' | 'gatewayBindingFile' | 'gatewayApprovalPolicy'> & Pick<Config, 'model'>
 
 class CodexProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -137,4 +152,31 @@ export function apply(ctx: Context, config: Config): void {
     ctx,
     resolved,
   ))
+  if (config.gatewayEnabled !== false) {
+    installGateway(ctx, config)
+  }
+}
+
+/** Wire the true-gateway: binding store, manager, commands, auto-reattach. */
+function installGateway(ctx: Context, config: Config): void {
+  // The gateway needs the live session/agent registries, which only a full
+  // host composition provides; lean compositions (headless one-shots, the
+  // official loader fixture) simply skip it.
+  if (ctx.get('agents') === undefined || ctx.get('sessions') === undefined) return
+  const bindingFile = config.gatewayBindingFile
+    ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'codex-plus-gateway.json')
+  const store = new GatewayBindingStore(bindingFile)
+  const manager = new GatewayManager(ctx, store, {
+    argv: codexAppServerArgv(),
+    ...config.model === undefined ? {} : { model: config.model },
+    ...config.gatewayApprovalPolicy === undefined
+      ? {}
+      : { approvalPolicy: config.gatewayApprovalPolicy },
+    ...config.env === undefined ? {} : { env: config.env },
+  })
+  const commands = ctx.get('commands')
+  if (commands !== undefined) {
+    applyGatewayCommands((definition) => commands.register(definition), manager)
+  }
+  manager.installAutoReattach()
 }

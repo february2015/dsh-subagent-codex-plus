@@ -107,6 +107,17 @@ app-server 会推送全量中间事件（消息中间件层）：
 `user/message`、`assistant/chunk`（token 级）、`assistant/message`、`tool/call`、`tool/result`、`turn/start|end`、`step/start|end`、`request/header`。
 网关/透出层可以把 Codex 中间事件映射为 `assistant/chunk`→`assistant/message` 输出，UI 原生渲染、无需补丁。
 
+### 3.5 真实宿主探针（probe-attach，0.1.1-rc.2 实测）
+
+- 探针 profile `~/.dsh/profiles/probe-attach`（`@deepseek-ai/dsh-base` + `dsh-gateway-probe` bundle），跑 `dsh --profile probe-attach`。
+- **19 项断言 ALL PASS**（`/tmp/probe-attach.log` 尾行 `[PROBE-COMPLETE]`），覆盖：真实插件 apply（`ctx.plugin()` 装载 `subagent-codex-plus`，provider `codex-plus` + `/codex-attach`、`/codex-detach` 注册成功）→ 建 loop agent → attach（真实 codex app-server、注册表原地换 agent）→ 绑定持久化 → followup 到 Codex（running→idle）→ 用户消息经 inbox 入 session 日志 → Q4（同 session 重复 attach 拒绝；同 thread 跨 session 拒绝）→ detach（entries 清空、binding 删除、child 停止）→ Q1（`ctx.agents.resume` 恢复 ReactLoopAgent 普通模式）→ C3（持久绑定下 resume 出版新 loop agent 后自动替换为 GatewayAgent，**同一 threadId**，继续对话）。
+- **routeServed 绕过**：`routeServed` 只检查 `selection.provider` 在 `llm.listProviders()` 里，不检查 model adapter；给 GatewayAgent 传 `provider:'deepseek'`（registry 里的 provider）即可过（实测 `deepseek-official/deepseek-v4-flash` 通过）。
+- **注册表换 agent 的约束**：`ctx.agents.register/enter` 同 id 会抛 `already registered`；正确做法是把旧 loop agent 的 store entry 用注册表私有 `detachEntered` 退役（发 `agent/disposed`），再 `enter+announce` 自己的 agent。
+- **persistence live-owner 教训**：detach 时 session entry 必须走 entry 自己的 `detach()`，不能直接 `store.delete`，否则 persistence 的 live-owner 不释放，Q1 resume 会报 `already has a live persistence owner`。
+- **detachEntered 的 `this`**：`detachEntered` 是 Cordis trace 包装方法，调用必须 `Reflect.apply(detachEntered, registry, [entry])` 保 `this`。
+- **插件手动 apply 陷阱**：直接 `plugin.apply(ctx, config)` 会跳过 Cordis inject，`ctx.subagents` 抛 `cannot get property "subagents" without inject`；必须 `ctx.plugin(plugin, config)`（loader 同款装载路径）。
+- 网关冒烟：`docs/verification/gateway-agent-smoke.ts`（agent 契约，约 15s）、`docs/verification/gateway-smoke.ts`（调度，约 70s，`thread/resume` 重连也过）。
+
 ## 4. UI 槽位与悬浮窗验证
 
 ### 4.1 官方槽位（`dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts`）

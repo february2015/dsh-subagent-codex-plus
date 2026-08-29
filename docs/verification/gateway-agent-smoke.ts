@@ -28,10 +28,13 @@ const passed = (label: string, detail = ''): void =>
 const text = (text: string) =>
   ({ role: 'user', content: [{ type: 'text', text }] })
 
+const recordedInbox = {
+  append() { /* structural stub: the smoke host carries no real dsh session */ },
+} as unknown as GatewayAgentHost['inbox']
 const host = {
   id: 'gateway-agent-smoke',
   session: undefined,
-  inbox: undefined,
+  inbox: recordedInbox,
   ctx: { logger: undefined },
   options: { provider: 'codex-plus' },
 } as unknown as GatewayAgentHost
