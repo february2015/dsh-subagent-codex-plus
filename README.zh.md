@@ -162,6 +162,24 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 
 仅追加：前台会在可复用的父请求前缀后增加一个结果，后台则会继续追加 Job 启动确认、通知以及后续控制或收集结果。后台调度可能增加一个由通知唤醒的轮次，但这些消息都不会改写更早的前缀。
 
+## 真网关直连（dsh-subagent-codex-plus 扩展）
+
+在官方 one-shot 委派之外，本 fork 新增**真网关**模式：一个 dsh 会话与一个持久
+Codex 线程 1:1 绑定，composer 的所有输入/输出直接搬运给该 Codex 线程，dsh 中间不跑任何模型。
+
+- `/codex-attach`：把当前会话绑定到一个持久 Codex 线程（spawn `codex app-server --stdio`，重启后 `thread/resume` 恢复）。
+- `/codex-detach`：解除绑定，恢复普通 dsh 智能体回路。
+- 绑定持久化在 `$DSH_HOME/codex-plus-gateway.json`（sessionId ↔ threadId）；重新进入该 dsh 会话自动重连同一个 Codex 线程（C3）。
+- 直连期间：忙时新消息**排队**（FIFO `followup`）；悬浮控制窗的 steer 输入可**立即插入**（中断当前轮，下轮立即执行）。
+- 状态显示用官方槽位（`conversation.session.header` 直连徽标、`conversation.composer.dock` 状态条、`conversation.input.dock` 排队列表）；控制操作放在悬浮窗（`shell.overlay`，dsh-pet 模式）。
+- Codex 中间事件（推理/agent 消息增量、工具调用）以日志型事件转发进 dsh 会话流（R1-A1），不进模型上下文（A2）。
+- 图片：composer 附件透传为 Codex `localImage`；开启视觉兜底时，图片字节还会经 ocgo 网关 `glm-5.3-flash` 生成描述文本随图注入（R4）。
+- DSH 侧图片门禁检查会话模型的 `inputModalities`：会话模型需支持图片输入（如模型选择器里选 `GLM-5.3 Flash (OCGo)`）。dsh-ocgw bundle 内 vendor 的 `dsh-llm-deepseek` 0.1.0-rc.7 需小补丁让 `resolveModels()` 保留 `inputModalities`（见 TECH-VERIFICATION §3.8）。
+
+网关配置字段：`gatewayEnabled`（默认 true）、`gatewayBindingFile`、`gatewayApprovalPolicy`、
+`gatewayEventForwarding`、`gatewayAppendFinalMessage`、`gatewayVisionEnabled`、
+`gatewayVisionEndpoint`、`gatewayVisionApiKey`、`gatewayVisionModel`。
+
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>

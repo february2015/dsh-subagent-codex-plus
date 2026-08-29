@@ -150,7 +150,35 @@ app-server 会推送全量中间事件（消息中间件层）：
 - 教训：agent 内部 `resolveAndRoute` 是异步的（含 GLM 约 15s），测试必须 await 后再等 `status==='idle'`，否则会误判「turn 未运行」。
 - 独立冒烟：`docs/verification/vision-smoke.ts`（真实 GLM 渠道，红 PNG→描述含红色系）。
 
+### 3.8 图片门禁根因与修复（DSH 侧 GLM 可选，2026-08-29）
+
+- DSH 图片门禁在 `session-controller/src/commands.ts:308-319`：发送 `image` 块前调用 `ctx.llm.resolveModelInfo(provider, model)`，若 `inputModalities` 不含 `image` 则拒绝（`MODEL_DOES_NOT_SUPPORT_IMAGES`）。
+- 根因：运行宿主用的是 dsh-ocgw 插件自带 vendor `@deepseek-ai/dsh-llm-deepseek@0.1.0-rc.7`，其 `resolveModels()` 只保留 `id/name/description/contextWindow/maxTokens`，把 `inputModalities` **字段丢弃**；`modelInfo()` 兜底 `?? ["text"]` → 任何模型（含 GLM）都报不支持图片。
+- 修复（vendor 补丁，备份 `index.js.bak-20260829-codex-plus-vision2`）：给 rc.7 的 `catalogModel` schema 加 `inputModalities`（Schemastery 写法 `z.union(["text","image"])`），并让 `resolveModels()` 透传 `inputModalities: [...inputModalities]`（校验非空、仅 text/image）。
+- 配套：`dsh-ocgw/src/provider.ts` 模型目录为 `glm-5.3-flash` 声明 `inputModalities: ["text","image"]`；`session.modelCatalog`（POST /api/session.models）实测 ocgo-gateway 组包含 GLM-5.3 Flash (OCGo)。
+- 独立验证：`node --input-type=module` 直调 rc.7 `resolveAdapterOptions` → `glm-5.3-flash` 输出 `inputModalities: ["text","image"]`。
+- 会话模型必须切到 GLM（`session.selectModel` RPC）门禁才放行；DeepSeek V4 Flash 仍为 text-only。
+
+### 3.9 真机浏览器端到端实测（2.3/2.4/3.2，2026-08-29）
+
+- 环境：`dsh --profile web --no-open --port 3099`（0.1.1-rc.2）+ Chrome headless + 真实 `codex app-server --stdio`（系统 PATH 0.150.1）。
+- 步骤：会话模型切 `ocgo-gateway/glm-5.3-flash` → composer 拖拽 320×240 红黑棋盘 PNG → 发送。
+- 证据（会话事件 JSONL + Codex rollout JSONL 双重核对）：
+  - `session.prompt` RPC 放行：`{"ok":true,"value":{"accepted":true}}`（此前 GLM 未修时返回 `MODEL_DOES_NOT_SUPPORT_IMAGES`）。
+  - `GatewayImageResolver` 物化 `/var/folders/.../dsh-codex-plus-img-wkjIFZ/img-1-sha256:d6fe5.png`（886 B）。
+  - Codex 线程实际收到的 userMessage：`[{input_text:"<image name=[Image #1] path=…>"}, {input_image base64}, {input_text:"</image>"}, {input_text:"[图片描述 · glm-5.3-flash]…"}]`。
+  - Codex 答复：`红黑相间：亮红色与近黑色的深灰色方块交替排列。`（真实看懂了图片）。
+- 结论：Q3 图片透传 + R4 GLM 视觉兜底在真网关路径完整闭环；D 门禁、协议、GLM 描述三环节全部实测通过。
+
+### 3.10 one-shot 委派回归（3.1 R0，2026-08-29）
+
+- 新增探针 `docs/verification/oneshot-smoke.ts`：经 `startCodexRun`（包内 `@openai/codex@0.149.1` 本地 bin）+ 真实 `app-server --stdio` + 最小本地 spawn 适配，跑「Reply with exactly: ONESHOT-OK」。
+- 实测：`[PASS] startCodexRun published a run` → `[PASS] one-shot final result (stopReason=completed)` → `[PASS] output contains ONESHOT-OK` → `[PASS] dispose clean` → `[PROBE-COMPLETE]`。
+- 注意：并发运行多个 app-server 会争用 `~/.codex` 状态库（`state db discrepancy` 刷屏、turn 挂起），探针需串行执行。
+- 与网关并存（Q5）：同一包内 `CodexProvider`（one-shot）与 `GatewayManager`（网关）可同时注册，互不干扰。
+
 ## 4. UI 槽位与悬浮窗验证
+
 
 ### 4.1 官方槽位（`dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts`）
 
@@ -174,6 +202,8 @@ app-server 会推送全量中间事件（消息中间件层）：
 | R1 中间过程全量透出 | ✅ 事件级全量可得（A1 可行）；字节级流式（A1-b）需 dsh 补丁，列为后续任务 | §2.5 |
 | R2 排队/插入 | ✅ 持久线程 queue/steer 全链路实测通过；语义=dsh followup/steer | §2.1-2.3 |
 | R3 真网关 | ✅ 注册 GatewayAgent 即实现，**无需打 dsh 核心补丁**；UI 输入输出经 session.prompt 直通 Codex | §3 |
+| R4 视觉兜底 | ✅ GLM 描述注入 Codex 实测通过（1.1 红色 PNG→棋盘格描述）；DSH 侧门禁需 GLM 会话模型 + rc.7 vendor 补丁 | §3.7-3.9 |
+| Q5 并存 | ✅ one-shot 委派与网关同包共存，回归探针全过 | §3.10 |
 | Q3 图片透传 | ✅ `localImage` 实测通过；dsh session.prompt 图片原生支持（子代理续聊除外，网关不走那条路） | §2.4、§3.1 |
 | C3 1:1 持久绑定 | ✅ 持久线程 JSONL 落盘 + `thread/resume` 原生支持 | §2.6 |
 | 状态→槽位 / 控制→浮层 | ✅ 官方槽位清单 + dsh-pet 悬浮层模式均实证 | §4 |
@@ -197,6 +227,9 @@ node ~/.dsh/profiles/node_modules/@deepseek-ai/dsh-client-runtime/... # 运行�
 node docs/verification/probe2.mjs  # 临时线程 + queue 拒绝 + steer
 node docs/verification/probe3.mjs  # 持久线程 + 忙时队列 + localImage
 node docs/verification/probe4.mjs  # 队列生命周期（空闲即启动 / auto-drain / update / delete）
+
+# one-shot 委派回归（3.1，需串行执行）
+node --experimental-transform-types docs/verification/oneshot-smoke.ts
 
 # 持久化产物
 ls ~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-*.jsonl

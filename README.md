@@ -162,6 +162,42 @@ Foreground input grows by the retained final answer or error. Background input a
 
 Append-only: foreground adds one result after the reusable parent prefix, while background appends the Job acknowledgement, notice, and later control or collection results. Background scheduling can add a notice-driven turn, but none of these messages rewrites the earlier prefix.
 
+## True-Gateway direct connection (dsh-subagent-codex-plus extension)
+
+Beyond the one-shot delegate, this fork adds a **true-gateway** mode: one dsh
+session binds 1:1 to one durable Codex thread, and every composer input/output
+is relayed straight to that Codex thread — dsh runs no model in between.
+
+- `/codex-attach` binds the current session to a persistent Codex thread
+  (spawns `codex app-server --stdio`, `thread/resume` on restart).
+- `/codex-detach` unbinds and restores the normal dsh agent loop.
+- Binding is durable in `$DSH_HOME/codex-plus-gateway.json` (sessionId ↔
+  threadId); reopening the dsh session auto-reattaches the same Codex thread
+  (C3).
+- While attached: messages are **queued** (FIFO `followup`) when the turn is
+  busy, or **inserted** immediately with the floating control panel's steer
+  input (interrupt + next-turn injection).
+- Status uses the official slots (`conversation.session.header` badge,
+  `conversation.composer.dock` status bar, `conversation.input.dock` queue
+  list); controls live in a floating panel (`shell.overlay`, dsh-pet pattern).
+- Codex intermediate events (reasoning/agent-message deltas, tool calls) are
+  forwarded into the dsh session log as log-only events (R1-A1), not into the
+  model context (A2).
+- Images: composer attachments pass through as Codex `localImage` inputs; when
+  the vision bridge is enabled, the image bytes are also described by
+  `glm-5.3-flash` through the ocgo gateway and injected as text alongside the
+  image (R4).
+- DSH-side image admission checks the session model's `inputModalities`: the
+  session model must support image input (e.g. select `GLM-5.3 Flash (OCGo)`
+  in the model picker). Vendored `dsh-llm-deepseek` 0.1.0-rc.7 inside the
+  dsh-ocgw bundle needs a small `resolveModels()` patch to preserve
+  `inputModalities` (see TECH-VERIFICATION §3.8).
+
+Gateway config fields: `gatewayEnabled` (default true),
+`gatewayBindingFile`, `gatewayApprovalPolicy`, `gatewayEventForwarding`,
+`gatewayAppendFinalMessage`, `gatewayVisionEnabled`, `gatewayVisionEndpoint`,
+`gatewayVisionApiKey`, `gatewayVisionModel`.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
