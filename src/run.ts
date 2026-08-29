@@ -16,6 +16,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
+  type RunResultSettlement,
   type SubagentResult,
   type SubagentRun,
   type SubagentStartRequest,
@@ -381,7 +382,10 @@ export async function startCodexRun(
       throw error
     },
   )
-  const result: Promise<SubagentResult> = settleRunResult({
+  const settlement: RunResultSettlement & {
+    /** Master-era diagnostic snapshot; tolerated by the published seam. */
+    readonly collectDiagnostic?: () => string | undefined
+  } = {
     attempt: async () => {
       try {
         const terminal = await Promise.race([
@@ -430,7 +434,9 @@ export async function startCodexRun(
     onError: spec.onError,
     signal: request.signal,
     onAbort,
-  })
+  }
+
+  const result = settleRunResult(settlement)
 
   return subprocessRunHandle({
     id: SessionId(randomUUID()),

@@ -9,6 +9,7 @@
 - [x] 0.2 技术验证 + 记录：`TECH-VERIFICATION.md` + 协议探针 `docs/verification/probe2-4.mjs`
 - [x] 0.3 需求定稿：`REQUIREMENTS.md` v1.1（R0-R4 + Q1-Q5；真网关 = V1 首发核心）
 - [x] 0.4 视觉渠道实测：ocgo 网关 `glm-5.3-flash` 看图成功（红色 PNG → Maroon）
+- [x] 0.5 运行环境升级：dsh 0.1.0-rc.7 → **0.1.1-rc.2**（CLI + profile 运行时）；独立 tsconfig；全量类型检查通过
 
 ## 阶段 1：网关核心（真网关最小闭环）
 

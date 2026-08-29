@@ -10,6 +10,13 @@
 既能委派式调用（保留官方 one-shot），也能连续对话（排队/插入），还能**真网关直连**
 （用户输入输出与 Codex 直接互通，dsh 不经过任何大模型，只做搬运）。
 
+## 运行环境决策（2026-08-29 用户定稿：**DSH 直接升级**）
+
+- 本机 dsh 从 `0.1.0-rc.7` 直接升级到 **`0.1.1-rc.2`**（全局 CLI + profile 运行时同步），与官方 `dsh-subagent-codex` bundle 同代，fork 的 master API（`NO_START_CAPABILITIES`、`settleRunResult`、`JsonRpcLineTransport` 等）全部可用。
+- 已验证：`dsh --version` = 0.1.1-rc.2；`dsh --profile web --dump-config` 组合正常；`npx tsc -p tsconfig.json` 全量类型检查通过。
+- 配套改动：`tsconfig.json` 改为独立配置（原 monorepo extends/references 已移除）；`package.json` 依赖范围修正为 npm 可解析版本（`cordis@^4.0.1`、`cordis-plugin-loader@^1.0.2`、`dsh-app-boot@^0.1.0-rc.6`、补 `typescript`/`@types/node`）；`src/run.ts` 对已发布 `RunResultSettlement` 类型做了 master 兼容处理。
+- 注意：`npm install` 因上游 dsh 包 peer 依赖（cordis 4.x vs 0.0.x 混标）需 `--legacy-peer-deps`，属上游打包问题，非本仓库问题。
+
 ## V1 交付范围（2026-08-29 用户定稿：**真网关第一次就要上**）
 
 - **R3 真网关是 V1 首发核心，不后置、不做二期**；one-shot 委派（R0）作为同一包内的既有子功能保留（官方插件逻辑），但 V1 的交付主线是网关直连。
