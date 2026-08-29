@@ -29,6 +29,9 @@
       "@deepseek-ai/dsh-subagent": [
         "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-subagent/lib/types/index.d.ts"
       ],
+      "@deepseek-ai/dsh-attachment": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-attachment/lib/types/index.d.ts"
+      ],
       "@deepseek-ai/dsh-subprocess": [
         "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-subprocess/lib/types/index.d.ts"
       ],

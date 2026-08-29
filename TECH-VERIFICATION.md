@@ -141,6 +141,15 @@ app-server 会推送全量中间事件（消息中间件层）：
 - 真实宿主 probe-attach：followup 一轮后 session 日志出现 `turn/start → step/start → assistant/chunk* → step/end → turn/end`（chunks 含 `reasoning-delta`/`text-delta`），**除用户消息 inbox 记录外无任何 surface 事件**（A2 成立）；20 项断言 ALL PASS。
 - `gateway-agent-smoke.ts` 同样断言中间事件落日志、无 surface 泄漏。
 
+### 3.7 图片透传 + Vision Bridge 实测（2.3 Q3 / 2.4 R4，2026-08-29）
+
+- dsh 图片存储为不透明 `ImageAttachmentRef`（`@deepseek-ai/dsh-attachment`，`ctx.attachments` 服务），`readImage(ref)` 返回归一化字节。
+- `GatewayImageResolver`（`src/gateway/images.ts`）把 `image` 块字节物化到 `os.tmpdir()/dsh-codex-plus-img-*/img-N-<id>.<ext>`，转成 Codex `localImage` 输入（协议层 probe3 早已验证）。
+- `VisionBridge`（`src/gateway/vision.ts`）用内置 `fetch` 调 ocgo `chat/completions`（`glm-5.3-flash`，base64 data URL），无新增依赖；路由默认读 `~/.codex/config.toml` 的 `[model_providers.ocgw]`（`base_url` + `experimental_bearer_token`），可用 `gatewayVisionEndpoint/ApiKey/Model` 覆盖，`gatewayVisionEnabled` 默认 true。
+- 实测（真实宿主 probe-attach）：composer 图片消息 → Codex `userMessage` item 实际收到 `[{type:text}, {type:localImage, path:…}, {type:text, text:"[图片描述 · glm-5.3-flash]…"}]`（`item/started` 通知抓包断言）；GLM 对 1×1 红色 PNG 输出「深红色/栗色 (maroon)」描述。
+- 教训：agent 内部 `resolveAndRoute` 是异步的（含 GLM 约 15s），测试必须 await 后再等 `status==='idle'`，否则会误判「turn 未运行」。
+- 独立冒烟：`docs/verification/vision-smoke.ts`（真实 GLM 渠道，红 PNG→描述含红色系）。
+
 ## 4. UI 槽位与悬浮窗验证
 
 ### 4.1 官方槽位（`dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts`）

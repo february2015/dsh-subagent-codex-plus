@@ -25,6 +25,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { GatewayAgent } from './agent.ts'
 import type { GatewayEventForwarderOptions } from './events.ts'
 import { CodexGateway, type CodexGatewayOptions } from './gateway.ts'
+import { GatewayImageResolver } from './images.ts'
+import type { VisionBridge } from './vision.ts'
 
 /** A live session↔Codex attachment. */
 export interface AttachedGateway {
@@ -55,6 +57,8 @@ export interface AttachGatewayOptions {
   readonly agentOptions?: AgentOptions
   /** Codex → dsh session event forwarding policy (R1-A1/A2). */
   readonly eventForwarder?: GatewayEventForwarderOptions
+  /** Optional GLM vision bridge; when set, images are described as text (R4). */
+  readonly vision?: VisionBridge
 }
 
 /** Narrow structural view of the registries' private stores. */
@@ -107,6 +111,7 @@ export async function attachGateway(
     throw error
   }
 
+  const imageResolver = new GatewayImageResolver(ctx)
   const agent = new GatewayAgent({
     id: sessionId,
     session,
@@ -118,7 +123,9 @@ export async function attachGateway(
     ctx: undefined,
     options: options.agentOptions ?? {},
   }, gateway, {
+    imageResolver,
     ...options.eventForwarder === undefined ? {} : { eventForwarder: options.eventForwarder },
+    ...options.vision === undefined ? {} : { vision: options.vision },
   })
   const scope = createScope(ctx, agent)
   agent.bindCtx(scope.ctx.extend({ agent }))
@@ -147,6 +154,7 @@ export async function attachGateway(
       // which the host's ordinary resume path requires on the next prompt.
       detachSessionEntry(ctx.sessions, sessionId)
       await gateway.dispose()
+      await imageResolver.dispose()
     },
   }
 }

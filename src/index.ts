@@ -9,6 +9,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { readOcgoVisionConfig, VisionBridge } from './gateway/vision.ts'
 import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
@@ -63,6 +64,14 @@ export interface Config {
   gatewayEventForwarding?: boolean
   /** Append the final Codex reply as a dsh surface event when a turn ends, default false (A2). */
   gatewayAppendFinalMessage?: boolean
+  /** Enable the GLM vision bridge for image descriptions (R4), default true. */
+  gatewayVisionEnabled?: boolean
+  /** Vision bridge endpoint override (default: ocgo provider from ~/.codex/config.toml). */
+  gatewayVisionEndpoint?: string
+  /** Vision bridge api key override (default: ocgo bearer token from ~/.codex/config.toml). */
+  gatewayVisionApiKey?: string
+  /** Vision bridge model override (default `glm-5.3-flash`). */
+  gatewayVisionModel?: string
 }
 
 export const Config: z<Config> = z.object({
@@ -77,11 +86,24 @@ export const Config: z<Config> = z.object({
   gatewayApprovalPolicy: z.string().min(1),
   gatewayEventForwarding: z.boolean().default(true),
   gatewayAppendFinalMessage: z.boolean().default(false),
+  gatewayVisionEnabled: z.boolean().default(true),
+  gatewayVisionEndpoint: z.string().min(1),
+  gatewayVisionApiKey: z.string().min(1),
+  gatewayVisionModel: z.string().min(1),
 })
 
 type ResolvedConfig = Omit<
   Required<Config>,
-  'model' | 'gatewayEnabled' | 'gatewayBindingFile' | 'gatewayApprovalPolicy' | 'gatewayEventForwarding' | 'gatewayAppendFinalMessage'
+  | 'model'
+  | 'gatewayEnabled'
+  | 'gatewayBindingFile'
+  | 'gatewayApprovalPolicy'
+  | 'gatewayEventForwarding'
+  | 'gatewayAppendFinalMessage'
+  | 'gatewayVisionEnabled'
+  | 'gatewayVisionEndpoint'
+  | 'gatewayVisionApiKey'
+  | 'gatewayVisionModel'
 > & Pick<Config, 'model'>
 
 class CodexProvider implements SubagentProvider {
@@ -166,6 +188,26 @@ export function apply(ctx: Context, config: Config): void {
   }
 }
 
+/** Build the vision bridge from explicit config, else the ocgo route in ~/.codex/config.toml. */
+function resolveVision(config: Config): VisionBridge | undefined {
+  if (config.gatewayVisionEnabled === false) return undefined
+  const explicit = config.gatewayVisionEndpoint !== undefined || config.gatewayVisionApiKey !== undefined
+  const route = explicit
+    ? {
+        endpoint: config.gatewayVisionEndpoint,
+        apiKey: config.gatewayVisionApiKey,
+      }
+    : readOcgoVisionConfig(join(homedir(), '.codex', 'config.toml'))
+  if (route === undefined || route.endpoint === undefined || route.apiKey === undefined) {
+    return undefined
+  }
+  return new VisionBridge({
+    endpoint: route.endpoint,
+    apiKey: route.apiKey,
+    model: config.gatewayVisionModel ?? 'glm-5.3-flash',
+  })
+}
+
 /** Wire the true-gateway: binding store, manager, commands, auto-reattach. */
 function installGateway(ctx: Context, config: Config): void {
   // The gateway needs the live session/agent registries, which only a full
@@ -175,6 +217,7 @@ function installGateway(ctx: Context, config: Config): void {
   const bindingFile = config.gatewayBindingFile
     ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'codex-plus-gateway.json')
   const store = new GatewayBindingStore(bindingFile)
+  const vision = resolveVision(config)
   const manager = new GatewayManager(ctx, store, {
     argv: codexAppServerArgv(),
     ...config.model === undefined ? {} : { model: config.model },
@@ -186,6 +229,7 @@ function installGateway(ctx: Context, config: Config): void {
       enabled: config.gatewayEventForwarding ?? true,
       appendFinalMessage: config.gatewayAppendFinalMessage ?? false,
     },
+    ...vision === undefined ? {} : { vision },
   })
   const commands = ctx.get('commands')
   if (commands !== undefined) {

@@ -24,8 +24,8 @@
 
 - [ ] 2.1 状态槽位：`conversation.session.header` 直连徽标 + `conversation.composer.dock` 状态条 + `conversation.input.dock` 排队列表
 - [ ] 2.2 悬浮控制窗（dsh-pet 模式）：队列查看/取消/改序、steer 插入、网关开关
-- [ ] 2.3 图片透传（Q3）：composer 附件 → Codex image UserInput（localImage）
-- [ ] 2.4 Vision Bridge（R4）：图片 → `glm-5.3-flash` 结构化描述 → 文本注入；状态条提示命中
+- [x] 2.3 图片透传（Q3）：composer 附件 → Codex image UserInput（localImage）
+- [x] 2.4 Vision Bridge（R4）：图片 → `glm-5.3-flash` 结构化描述 → 文本注入；状态条提示命中
 
 ## 阶段 3：并存与收尾
 

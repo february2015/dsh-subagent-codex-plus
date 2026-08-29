@@ -57,6 +57,7 @@ export class GatewayManager {
             ...this.options.env === undefined ? {} : { env: this.options.env },
             ...this.options.agentOptions === undefined ? {} : { agentOptions: this.options.agentOptions },
             ...this.options.eventForwarder === undefined ? {} : { eventForwarder: this.options.eventForwarder },
+            ...this.options.vision === undefined ? {} : { vision: this.options.vision },
             ...threadId === undefined ? {} : { threadId },
         });
         // The manager may have raced another attach for the same thread; the
@@ -111,6 +112,7 @@ export class GatewayManager {
             ...this.options.env === undefined ? {} : { env: this.options.env },
             ...this.options.agentOptions === undefined ? {} : { agentOptions: this.options.agentOptions },
             ...this.options.eventForwarder === undefined ? {} : { eventForwarder: this.options.eventForwarder },
+            ...this.options.vision === undefined ? {} : { vision: this.options.vision },
             threadId: binding.codexThreadId,
         });
         this.attached.set(sessionId, attached);

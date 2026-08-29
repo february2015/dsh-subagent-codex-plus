@@ -7,16 +7,17 @@
  */
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { GatewayManager } from './gateway/manager.js'
 import { GatewayBindingStore } from './gateway/binding.js'
 import { isGatewayAgent } from './gateway/attach.js'
+import { VisionBridge, readOcgoVisionConfig } from './gateway/vision.js'
 
 export const name = 'gateway-probe'
-export const inject = ['agents', 'sessions', 'commands', 'llm', 'agentDefaultModel']
+export const inject = ['agents', 'sessions', 'commands', 'llm', 'agentDefaultModel', 'attachments']
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -105,7 +106,13 @@ async function run(ctx) {
   // 3. attach: real app-server + durable thread + registry swap.
   const bindingFile = join(cwd, 'gateway-bindings.json')
   const store = new GatewayBindingStore(bindingFile)
-  const manager = new GatewayManager(ctx, store, { argv, agentOptions: { provider: 'deepseek', model: 'deepseek-chat' } })
+  const ocgo = readOcgoVisionConfig(join(homedir(), '.codex', 'config.toml'))
+  const vision = ocgo === undefined ? undefined : new VisionBridge(ocgo)
+  const manager = new GatewayManager(ctx, store, {
+    argv,
+    agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
+    ...vision === undefined ? {} : { vision },
+  })
   manager.installAutoReattach()
   const attached = await manager.attach(sessionId)
   pass('attached (registry swap)', `thread=${attached.threadId}`)
@@ -148,6 +155,57 @@ async function run(ctx) {
     .map((event) => event.data?.chunk?.type)
   pass('1.6: intermediate events logged (turn/step/chunk/turn-end), no surface pollution',
     `chunks=${JSON.stringify([...new Set(chunkKinds)])}`)
+
+  // 4c. 2.3/2.4 Q3/R4: image block -> Codex localImage (+ vision description).
+  {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    const ref = await ctx.attachments.saveImage({ data: png, mediaType: 'image/png', name: 'probe-red.png' })
+    const imageSeen = []
+    const imageTap = (n) => {
+      if (n.method === 'item/started' && n.params?.item?.type === 'userMessage') {
+        imageSeen.push(n.params.item.content)
+      }
+    }
+    attached.gateway.on('notification', imageTap)
+    const beforeImage = attached.agent.session.events.length
+    const imageMsg = createUserMessage({
+      content: [
+        { type: 'text', text: 'Describe the attached image briefly. Reply with exactly: IMAGE_OK' },
+        { type: 'image', attachment: ref },
+      ],
+      source: { kind: 'user', rpcId: 'probe-img' },
+    })
+    // Drive the real agent path (resolve -> submit -> turn) and await it so
+    // the turn has actually started before we wait for completion.
+    await attached.agent.resolveAndRoute('followup', imageMsg, [])
+    await waitFor('image turn idle', () => attached.agent.status === 'idle')
+    await sleep(500)
+    attached.gateway.off('notification', imageTap)
+    const userItem = imageSeen.find((content) =>
+      Array.isArray(content) && content.some((block) => block?.type === 'localImage'))
+    if (userItem === undefined) {
+      throw new Error('2.3: Codex userMessage item did not carry a localImage input')
+    }
+    const blocks = userItem.map((b) => b?.type)
+    const hasVisionText = vision !== undefined && userItem.some((b) =>
+      b?.type === 'text' && typeof b.text === 'string' && b.text.startsWith('[图片描述'))
+    pass('2.3: image -> localImage reached Codex', `blocks=${JSON.stringify(blocks)}`)
+    if (vision === undefined) {
+      pass('2.4: vision bridge skipped (no ocgo route found)')
+    } else if (hasVisionText) {
+      pass('2.4: GLM vision description injected as text', 'glm-5.3-flash')
+    } else {
+      throw new Error('2.4: vision bridge enabled but no [图片描述 text block reached Codex')
+    }
+    const imgEvents = attached.agent.session.events.slice(beforeImage)
+    if (!imgEvents.some((e) => e.type === 'assistant/chunk')) {
+      throw new Error('2.3: image turn produced no assistant chunks in the session log')
+    }
+    pass('2.3: image turn also streamed intermediate events', `events +${imgEvents.length}`)
+  }
 
   // 5. Q4: duplicate attach refused for the same session; thread owner enforced.
   let duplicateRejected = false

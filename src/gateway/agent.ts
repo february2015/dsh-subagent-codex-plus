@@ -10,7 +10,9 @@
  * - cancel -> best-effort `turn/interrupt` (thread/process stay alive).
  *
  * Intermediate Codex output is projected into the dsh session log as
- * log-only events (R1-A1, A2) via {@link GatewayEventForwarder}.
+ * log-only events (R1-A1, A2) via {@link GatewayEventForwarder}; image blocks
+ * are resolved to Codex `localImage` inputs (Q3) with an optional GLM vision
+ * description injected as text (R4).
  *
  * @module dsh-subagent-codex-plus/gateway/agent
  */
@@ -36,6 +38,8 @@ import {
   GatewayEventForwarder,
   type GatewayEventForwarderOptions,
 } from './events.ts'
+import type { GatewayImageResolver } from './images.ts'
+import type { VisionBridge } from './vision.ts'
 import type { GatewayTextInput, GatewayUserInput } from './wire.ts'
 
 /** Live dsh association supplied by the host when the agent is registered. */
@@ -51,24 +55,49 @@ export interface GatewayAgentHost {
 export interface GatewayAgentOptions {
   /** Codex → dsh session event forwarding policy (R1-A1/A2). */
   readonly eventForwarder?: GatewayEventForwarderOptions
+  /** Resolves dsh image blocks to Codex `localImage` inputs (Q3). */
+  readonly imageResolver?: GatewayImageResolver
+  /** Optional vision bridge; when set, images are described as text (R4). */
+  readonly vision?: VisionBridge
 }
 
 /**
  * Project one dsh user message onto gateway input blocks. Text blocks pass
- * through; image/attachment blocks are deferred to the image-passthrough
- * step (Q3/R4) and fail loudly until then.
+ * through; image blocks are resolved asynchronously by the image resolver.
  */
-export function gatewayInputs(message: UserMessage): GatewayUserInput[] {
-  const inputs: GatewayUserInput[] = []
+export async function resolveInputs(
+  message: UserMessage,
+  injected: readonly string[],
+  resolver: GatewayImageResolver | undefined,
+  vision: VisionBridge | undefined,
+): Promise<GatewayUserInput[]> {
+  const inputs: GatewayUserInput[] = [
+    ...injected.map((text): GatewayTextInput => ({ type: 'text', text, text_elements: [] })),
+  ]
   for (const block of message.content) {
     if (block.type === 'text') {
       inputs.push({ type: 'text', text: block.text, text_elements: [] })
       continue
     }
-    throw new Error('gateway: image/attachment passthrough not wired yet (Q3/R4 step)')
+    if (block.type === 'image') {
+      if (resolver === undefined) {
+        throw new Error('gateway: image passthrough not available in this host')
+      }
+      const resolved = await resolver.resolve(block.attachment, vision)
+      inputs.push(resolved.input)
+      if (resolved.description !== undefined) {
+        inputs.push({
+          type: 'text',
+          text: `[图片描述 · ${vision?.model ?? 'vision'}]\n${resolved.description}`,
+          text_elements: [],
+        })
+      }
+      continue
+    }
+    throw new Error(`gateway: unsupported content block "${block.type}" in user message`)
   }
   if (inputs.length === 0) {
-    throw new Error('gateway: user message carried no text content')
+    throw new Error('gateway: user message carried no text or image content')
   }
   return inputs
 }
@@ -167,21 +196,8 @@ export class GatewayAgent implements Agent {
   }
 
   private dispatch(kind: 'followup' | 'steer', message: UserMessage): void {
-    let inputs: GatewayUserInput[]
-    try {
-      const injected = this.pendingInject
-      this.pendingInject = []
-      const blocks = gatewayInputs(message)
-      inputs = injected.length === 0
-        ? blocks
-        : [
-            ...injected.map((text): GatewayTextInput => ({ type: 'text', text, text_elements: [] })),
-            ...blocks,
-          ]
-    } catch (error: unknown) {
-      this.report(error)
-      return
-    }
+    const injected = this.pendingInject
+    this.pendingInject = []
     // Mirror the loop agent's durable inbox recording so the dsh UI and log
     // show the user's prompt even though no dsh model processes it.
     try {
@@ -190,13 +206,23 @@ export class GatewayAgent implements Agent {
       this.report(error)
       return
     }
-    void this.route(kind, inputs).catch((error: unknown) => this.report(error))
+    void this.resolveAndRoute(kind, message, injected).catch((error: unknown) => this.report(error))
   }
 
-  private async route(kind: 'followup' | 'steer', inputs: GatewayUserInput[]): Promise<void> {
+  private async resolveAndRoute(
+    kind: 'followup' | 'steer',
+    message: UserMessage,
+    injected: readonly string[],
+  ): Promise<void> {
     if (this.gateway.phase !== 'ready') {
       throw new Error(`gateway: agent not attached (phase ${this.gateway.phase})`)
     }
+    const inputs = await resolveInputs(
+      message,
+      injected,
+      this.agentOptions.imageResolver,
+      this.agentOptions.vision,
+    )
     if (kind === 'steer') {
       await this.gateway.steer(inputs)
     } else {

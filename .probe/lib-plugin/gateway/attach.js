@@ -21,6 +21,7 @@ import { Inbox } from '@deepseek-ai/dsh-agent';
 import { createScope } from '@deepseek-ai/dsh-scope';
 import { GatewayAgent } from "./agent.js";
 import { CodexGateway } from "./gateway.js";
+import { GatewayImageResolver } from "./images.js";
 /**
  * Attach a session to a Codex thread: start (or resume) the gateway, build a
  * scoped GatewayAgent, and swap it into the registries in place of the
@@ -56,6 +57,7 @@ export async function attachGateway(ctx, sessionId, options) {
         void gateway.dispose();
         throw error;
     }
+    const imageResolver = new GatewayImageResolver(ctx);
     const agent = new GatewayAgent({
         id: sessionId,
         session,
@@ -67,7 +69,9 @@ export async function attachGateway(ctx, sessionId, options) {
         ctx: undefined,
         options: options.agentOptions ?? {},
     }, gateway, {
+        imageResolver,
         ...options.eventForwarder === undefined ? {} : { eventForwarder: options.eventForwarder },
+        ...options.vision === undefined ? {} : { vision: options.vision },
     });
     const scope = createScope(ctx, agent);
     agent.bindCtx(scope.ctx.extend({ agent }));
@@ -94,6 +98,7 @@ export async function attachGateway(ctx, sessionId, options) {
             // which the host's ordinary resume path requires on the next prompt.
             detachSessionEntry(ctx.sessions, sessionId);
             await gateway.dispose();
+            await imageResolver.dispose();
         },
     };
 }

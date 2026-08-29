@@ -10,7 +10,9 @@
  * - cancel -> best-effort `turn/interrupt` (thread/process stay alive).
  *
  * Intermediate Codex output is projected into the dsh session log as
- * log-only events (R1-A1, A2) via {@link GatewayEventForwarder}.
+ * log-only events (R1-A1, A2) via {@link GatewayEventForwarder}; image blocks
+ * are resolved to Codex `localImage` inputs (Q3) with an optional GLM vision
+ * description injected as text (R4).
  *
  * @module dsh-subagent-codex-plus/gateway/agent
  */
@@ -18,20 +20,36 @@ import { CodexGateway } from "./gateway.js";
 import { DEFAULT_EVENT_FORWARDER_OPTIONS, GatewayEventForwarder, } from "./events.js";
 /**
  * Project one dsh user message onto gateway input blocks. Text blocks pass
- * through; image/attachment blocks are deferred to the image-passthrough
- * step (Q3/R4) and fail loudly until then.
+ * through; image blocks are resolved asynchronously by the image resolver.
  */
-export function gatewayInputs(message) {
-    const inputs = [];
+export async function resolveInputs(message, injected, resolver, vision) {
+    const inputs = [
+        ...injected.map((text) => ({ type: 'text', text, text_elements: [] })),
+    ];
     for (const block of message.content) {
         if (block.type === 'text') {
             inputs.push({ type: 'text', text: block.text, text_elements: [] });
             continue;
         }
-        throw new Error('gateway: image/attachment passthrough not wired yet (Q3/R4 step)');
+        if (block.type === 'image') {
+            if (resolver === undefined) {
+                throw new Error('gateway: image passthrough not available in this host');
+            }
+            const resolved = await resolver.resolve(block.attachment, vision);
+            inputs.push(resolved.input);
+            if (resolved.description !== undefined) {
+                inputs.push({
+                    type: 'text',
+                    text: `[图片描述 · ${vision?.model ?? 'vision'}]\n${resolved.description}`,
+                    text_elements: [],
+                });
+            }
+            continue;
+        }
+        throw new Error(`gateway: unsupported content block "${block.type}" in user message`);
     }
     if (inputs.length === 0) {
-        throw new Error('gateway: user message carried no text content');
+        throw new Error('gateway: user message carried no text or image content');
     }
     return inputs;
 }
@@ -119,22 +137,8 @@ export class GatewayAgent {
         return done;
     }
     dispatch(kind, message) {
-        let inputs;
-        try {
-            const injected = this.pendingInject;
-            this.pendingInject = [];
-            const blocks = gatewayInputs(message);
-            inputs = injected.length === 0
-                ? blocks
-                : [
-                    ...injected.map((text) => ({ type: 'text', text, text_elements: [] })),
-                    ...blocks,
-                ];
-        }
-        catch (error) {
-            this.report(error);
-            return;
-        }
+        const injected = this.pendingInject;
+        this.pendingInject = [];
         // Mirror the loop agent's durable inbox recording so the dsh UI and log
         // show the user's prompt even though no dsh model processes it.
         try {
@@ -144,12 +148,13 @@ export class GatewayAgent {
             this.report(error);
             return;
         }
-        void this.route(kind, inputs).catch((error) => this.report(error));
+        void this.resolveAndRoute(kind, message, injected).catch((error) => this.report(error));
     }
-    async route(kind, inputs) {
+    async resolveAndRoute(kind, message, injected) {
         if (this.gateway.phase !== 'ready') {
             throw new Error(`gateway: agent not attached (phase ${this.gateway.phase})`);
         }
+        const inputs = await resolveInputs(message, injected, this.agentOptions.imageResolver, this.agentOptions.vision);
         if (kind === 'steer') {
             await this.gateway.steer(inputs);
         }
