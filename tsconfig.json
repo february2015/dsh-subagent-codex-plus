@@ -11,7 +11,34 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/cordis": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/cordis"
+      ],
+      "@deepseek-ai/dsh-agent": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-agent"
+      ],
+      "@deepseek-ai/dsh-session": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-session"
+      ],
+      "@deepseek-ai/dsh-llm": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-llm"
+      ],
+      "@deepseek-ai/dsh-subagent": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-subagent"
+      ],
+      "@deepseek-ai/dsh-subprocess": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-subprocess"
+      ],
+      "@deepseek-ai/dsh-timeout": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-timeout"
+      ],
+      "@deepseek-ai/dsh-invariants": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-invariants"
+      ]
+    }
   },
   "include": [
     "src"

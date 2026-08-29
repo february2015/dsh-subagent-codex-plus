@@ -250,13 +250,15 @@ export class CodexGateway extends EventEmitter {
   private handleNotification(notification: CodexGatewayNotification): void {
     switch (notification.method) {
       case 'turn/started':
-        this.turnStateValue = 'running'
-        const turn = notification.params.turn as { readonly id?: unknown } | undefined
-        this.turnIdValue = readString(turn?.id)
-        break
+        {
+          const turn = notification.params.turn as { readonly id?: unknown } | undefined
+          this.turnIdValue = readString(turn?.id)
+          this.setTurnState('running')
+          break
+        }
       case 'turn/completed':
-        this.turnStateValue = 'idle'
         this.turnIdValue = undefined
+        this.setTurnState('idle')
         break
       default:
         break
