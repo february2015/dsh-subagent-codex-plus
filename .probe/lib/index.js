@@ -129,6 +129,26 @@ async function run(ctx) {
   if (!recorded) throw new Error('user message was not durably recorded in the session log')
   pass('user message recorded via inbox', `events +${attached.agent.session.events.length - before}`)
 
+  // 4b. 1.6 R1-A1/A2: Codex intermediate events landed in the session log as
+  //     log-only events (never surface), so the dsh model context stays clean.
+  const turnEvents = attached.agent.session.events.slice(before)
+  const turnTypes = turnEvents.map((event) => event.type)
+  for (const expected of ['turn/start', 'step/start', 'assistant/chunk', 'step/end', 'turn/end']) {
+    if (!turnTypes.includes(expected)) {
+      throw new Error(`1.6: session log missing ${expected} (got ${JSON.stringify(turnTypes)})`)
+    }
+  }
+  const surfaceAfter = turnEvents.filter((event) =>
+    ['user/message', 'assistant/message', 'tool/result'].includes(event.type))
+  if (surfaceAfter.length !== 0) {
+    throw new Error(`1.6: unexpected surface events polluted model context: ${surfaceAfter.map((e) => e.type).join(',')}`)
+  }
+  const chunkKinds = turnEvents
+    .filter((event) => event.type === 'assistant/chunk')
+    .map((event) => event.data?.chunk?.type)
+  pass('1.6: intermediate events logged (turn/step/chunk/turn-end), no surface pollution',
+    `chunks=${JSON.stringify([...new Set(chunkKinds)])}`)
+
   // 5. Q4: duplicate attach refused for the same session; thread owner enforced.
   let duplicateRejected = false
   try { await manager.attach(sessionId) } catch (error) { duplicateRejected = /already bound/.test(String(error)) }

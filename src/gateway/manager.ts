@@ -10,6 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { attachGateway, isGatewayAgent, type AttachedGateway } from './attach.ts'
+import type { GatewayEventForwarderOptions } from './events.ts'
 import type { GatewayBinding } from './binding.ts'
 import { GatewayBindingStore } from './binding.ts'
 
@@ -24,6 +25,8 @@ export interface GatewayManagerOptions {
   readonly env?: Record<string, string>
   /** Per-agent model options carried on registered gateway agents. */
   readonly agentOptions?: Record<string, unknown>
+  /** Codex → dsh session event forwarding policy (R1-A1/A2). */
+  readonly eventForwarder?: GatewayEventForwarderOptions
 }
 
 /** Owns one live attachment per session plus its durable binding. */
@@ -76,6 +79,7 @@ export class GatewayManager {
       ...this.options.approvalPolicy === undefined ? {} : { approvalPolicy: this.options.approvalPolicy },
       ...this.options.env === undefined ? {} : { env: this.options.env },
       ...this.options.agentOptions === undefined ? {} : { agentOptions: this.options.agentOptions as never },
+      ...this.options.eventForwarder === undefined ? {} : { eventForwarder: this.options.eventForwarder },
       ...threadId === undefined ? {} : { threadId },
     })
     // The manager may have raced another attach for the same thread; the
@@ -131,6 +135,7 @@ export class GatewayManager {
       ...this.options.approvalPolicy === undefined ? {} : { approvalPolicy: this.options.approvalPolicy },
       ...this.options.env === undefined ? {} : { env: this.options.env },
       ...this.options.agentOptions === undefined ? {} : { agentOptions: this.options.agentOptions as never },
+      ...this.options.eventForwarder === undefined ? {} : { eventForwarder: this.options.eventForwarder },
       threadId: binding.codexThreadId,
     })
     this.attached.set(sessionId, attached)

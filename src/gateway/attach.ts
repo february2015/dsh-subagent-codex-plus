@@ -23,6 +23,7 @@ import { Inbox, type Agent, type AgentOptions } from '@deepseek-ai/dsh-agent'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { GatewayAgent } from './agent.ts'
+import type { GatewayEventForwarderOptions } from './events.ts'
 import { CodexGateway, type CodexGatewayOptions } from './gateway.ts'
 
 /** A live session↔Codex attachment. */
@@ -52,6 +53,8 @@ export interface AttachGatewayOptions {
   readonly env?: Record<string, string>
   /** Per-agent model options carried on the registered agent. */
   readonly agentOptions?: AgentOptions
+  /** Codex → dsh session event forwarding policy (R1-A1/A2). */
+  readonly eventForwarder?: GatewayEventForwarderOptions
 }
 
 /** Narrow structural view of the registries' private stores. */
@@ -114,7 +117,9 @@ export async function attachGateway(
     }),
     ctx: undefined,
     options: options.agentOptions ?? {},
-  }, gateway)
+  }, gateway, {
+    ...options.eventForwarder === undefined ? {} : { eventForwarder: options.eventForwarder },
+  })
   const scope = createScope(ctx, agent)
   agent.bindCtx(scope.ctx.extend({ agent }))
 

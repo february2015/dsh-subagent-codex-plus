@@ -110,13 +110,36 @@ app-server 会推送全量中间事件（消息中间件层）：
 ### 3.5 真实宿主探针（probe-attach，0.1.1-rc.2 实测）
 
 - 探针 profile `~/.dsh/profiles/probe-attach`（`@deepseek-ai/dsh-base` + `dsh-gateway-probe` bundle），跑 `dsh --profile probe-attach`。
-- **19 项断言 ALL PASS**（`/tmp/probe-attach.log` 尾行 `[PROBE-COMPLETE]`），覆盖：真实插件 apply（`ctx.plugin()` 装载 `subagent-codex-plus`，provider `codex-plus` + `/codex-attach`、`/codex-detach` 注册成功）→ 建 loop agent → attach（真实 codex app-server、注册表原地换 agent）→ 绑定持久化 → followup 到 Codex（running→idle）→ 用户消息经 inbox 入 session 日志 → Q4（同 session 重复 attach 拒绝；同 thread 跨 session 拒绝）→ detach（entries 清空、binding 删除、child 停止）→ Q1（`ctx.agents.resume` 恢复 ReactLoopAgent 普通模式）→ C3（持久绑定下 resume 出版新 loop agent 后自动替换为 GatewayAgent，**同一 threadId**，继续对话）。
+- **20 项断言 ALL PASS**（`/tmp/probe-attach.log` 尾行 `[PROBE-COMPLETE]`），覆盖：真实插件 apply（`ctx.plugin()` 装载 `subagent-codex-plus`，provider `codex-plus` + `/codex-attach`、`/codex-detach` 注册成功）→ 建 loop agent → attach（真实 codex app-server、注册表原地换 agent）→ 绑定持久化 → followup 到 Codex（running→idle）→ 用户消息经 inbox 入 session 日志 → Q4（同 session 重复 attach 拒绝；同 thread 跨 session 拒绝）→ detach（entries 清空、binding 删除、child 停止）→ Q1（`ctx.agents.resume` 恢复 ReactLoopAgent 普通模式）→ C3（持久绑定下 resume 出版新 loop agent 后自动替换为 GatewayAgent，**同一 threadId**，继续对话）。
 - **routeServed 绕过**：`routeServed` 只检查 `selection.provider` 在 `llm.listProviders()` 里，不检查 model adapter；给 GatewayAgent 传 `provider:'deepseek'`（registry 里的 provider）即可过（实测 `deepseek-official/deepseek-v4-flash` 通过）。
 - **注册表换 agent 的约束**：`ctx.agents.register/enter` 同 id 会抛 `already registered`；正确做法是把旧 loop agent 的 store entry 用注册表私有 `detachEntered` 退役（发 `agent/disposed`），再 `enter+announce` 自己的 agent。
 - **persistence live-owner 教训**：detach 时 session entry 必须走 entry 自己的 `detach()`，不能直接 `store.delete`，否则 persistence 的 live-owner 不释放，Q1 resume 会报 `already has a live persistence owner`。
 - **detachEntered 的 `this`**：`detachEntered` 是 Cordis trace 包装方法，调用必须 `Reflect.apply(detachEntered, registry, [entry])` 保 `this`。
 - **插件手动 apply 陷阱**：直接 `plugin.apply(ctx, config)` 会跳过 Cordis inject，`ctx.subagents` 抛 `cannot get property "subagents" without inject`；必须 `ctx.plugin(plugin, config)`（loader 同款装载路径）。
-- 网关冒烟：`docs/verification/gateway-agent-smoke.ts`（agent 契约，约 15s）、`docs/verification/gateway-smoke.ts`（调度，约 70s，`thread/resume` 重连也过）。
+- 网关冒烟：`docs/verification/gateway-agent-smoke.ts`（agent 契约，约 15s，含 1.6 事件透出断言）、`docs/verification/gateway-smoke.ts`（调度，约 70s，`thread/resume` 重连也过）。
+
+### 3.6 1.6 事件透出实测（R1-A1/A2，2026-08-29）
+
+**真实 app-server 通知流抓包**（`codex app-server --stdio`，本机 deepseek-v4-flash via ocgw；脚本 `/tmp/capture-notifs*.mjs`）：
+一轮普通 turn 的实际通知序列：`thread/started` → `thread/status/changed` → `turn/started` → `hook/started|completed` → `item/started`/`item/completed`（item 类型：`userMessage`、`reasoning`、`agentMessage`）→ `item/reasoning/textDelta`（`{threadId, turnId, itemId, delta, contentIndex}`）→ `item/agentMessage/delta`（`{threadId, turnId, itemId, delta}`）→ `thread/tokenUsage/updated` → `account/rateLimits/updated` → `turn/completed`（final `turn.status` ∈ `completed|interrupted|failed`）。另有 `warning`、`skills/changed`、`mcpServer/startupStatus/updated`、`remoteControl/status/changed`。
+- 工具调用 item 形状（协议文档，本机模型不调函数无真实样本）：`item/started|completed` 的 `item.type = dynamicToolCall`（`{id, tool, arguments, status}`）；旧式 `functionCall` 按 `{id, name, arguments}` 兜底映射。
+- `turn/completed` 的 `turn` 含最终 `agentMessage` 摘要（`itemsView:"summary"`）；完整条目仍需消费 `item/*` 流 —— 与我们的逐 item 映射一致。
+
+**GatewayEventForwarder 映射**（`src/gateway/events.ts`，纯 log-only，A2）：
+| Codex 通知 | dsh 会话事件 | 说明 |
+| --- | --- | --- |
+| `turn/started` | `turn/start` + `step/start` | turn 计数递增；每 turn 一个 step |
+| `turn/completed` | `step/end` + `turn/end` | status→reason：`completed`/`interrupted`(→aborted/user)/`failed`(→error/UNKNOWN) |
+| `item/reasoning/textDelta` | `assistant/chunk`（`reasoning-delta`） | 保留 `contentIndex` |
+| `item/agentMessage/delta` | `assistant/chunk`（`text-delta`） | 逐 delta 追加 |
+| `item/started`（tool item） | `tool/call` | name/arguments JSON；`callId`=item id |
+- `Session.append` 是类方法（读 `this.log`），**必须 `.bind(session)` 后调用**，否则 detached 调用抛 TypeError 且 dsh 宿主吞掉 console.error —— 实测教训。
+- 新配置：`gatewayEventForwarding`（默认 true）、`gatewayAppendFinalMessage`（默认 false，防 surface 污染）。
+
+**验证结果**：
+- 单测 `docs/verification/events-smoke.ts`（真实抓包形状喂入，14 断言 ALL PASS）。
+- 真实宿主 probe-attach：followup 一轮后 session 日志出现 `turn/start → step/start → assistant/chunk* → step/end → turn/end`（chunks 含 `reasoning-delta`/`text-delta`），**除用户消息 inbox 记录外无任何 surface 事件**（A2 成立）；20 项断言 ALL PASS。
+- `gateway-agent-smoke.ts` 同样断言中间事件落日志、无 surface 泄漏。
 
 ## 4. UI 槽位与悬浮窗验证
 

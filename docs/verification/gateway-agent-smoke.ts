@@ -31,9 +31,18 @@ const text = (text: string) =>
 const recordedInbox = {
   append() { /* structural stub: the smoke host carries no real dsh session */ },
 } as unknown as GatewayAgentHost['inbox']
+// Structural session stub: the smoke host carries no real dsh session, but the
+// event forwarder (R1-A1) calls `session.append` on every Codex notification.
+const sessionEvents: Array<{ type: string; data: unknown }> = []
+const fakeSession = {
+  append(type: string, data: unknown) {
+    sessionEvents.push({ type, data })
+    return { seq: sessionEvents.length, type, data, time: Date.now() }
+  },
+} as unknown as NonNullable<GatewayAgentHost['session']>
 const host = {
   id: 'gateway-agent-smoke',
-  session: undefined,
+  session: fakeSession,
   inbox: recordedInbox,
   ctx: { logger: undefined },
   options: { provider: 'codex-plus' },
@@ -57,6 +66,15 @@ try {
   passed('followup -> running')
   await waitFor('followup completion', () => agent.status === 'idle')
   passed('followup -> idle (turn/completed)')
+  const sessionTypes = sessionEvents.map((event) => event.type)
+  for (const expected of ['turn/start', 'step/start', 'assistant/chunk', 'step/end', 'turn/end']) {
+    if (!sessionTypes.includes(expected)) throw new Error(`forwarder: missing ${expected}`)
+  }
+  if (sessionEvents.some((e) => ['user/message', 'assistant/message', 'tool/result'].includes(e.type))) {
+    throw new Error('forwarder: surface event leaked into the fake session')
+  }
+  passed('forwarder logged intermediate events (no surface pollution)',
+    `events=${sessionTypes.join(',')}`)
 
   // whenIdle resolves
   await agent.whenIdle()

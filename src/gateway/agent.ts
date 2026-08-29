@@ -9,6 +9,9 @@
  * - inject -> buffered and merged as leading text into the next submission;
  * - cancel -> best-effort `turn/interrupt` (thread/process stay alive).
  *
+ * Intermediate Codex output is projected into the dsh session log as
+ * log-only events (R1-A1, A2) via {@link GatewayEventForwarder}.
+ *
  * @module dsh-subagent-codex-plus/gateway/agent
  */
 
@@ -28,6 +31,11 @@ import type {
   UserMessage,
 } from '@deepseek-ai/dsh-session'
 import { CodexGateway } from './gateway.ts'
+import {
+  DEFAULT_EVENT_FORWARDER_OPTIONS,
+  GatewayEventForwarder,
+  type GatewayEventForwarderOptions,
+} from './events.ts'
 import type { GatewayTextInput, GatewayUserInput } from './wire.ts'
 
 /** Live dsh association supplied by the host when the agent is registered. */
@@ -38,6 +46,11 @@ export interface GatewayAgentHost {
   /** Agent-scoped context; bound by the attach wiring after construction. */
   readonly ctx: Context | undefined
   readonly options: AgentOptions
+}
+
+export interface GatewayAgentOptions {
+  /** Codex → dsh session event forwarding policy (R1-A1/A2). */
+  readonly eventForwarder?: GatewayEventForwarderOptions
 }
 
 /**
@@ -75,6 +88,7 @@ export class GatewayAgent implements Agent {
   constructor(
     private readonly host: GatewayAgentHost,
     private readonly gateway: CodexGateway,
+    private readonly agentOptions: GatewayAgentOptions = {},
   ) {
     this.id = host.id
     this.options = host.options
@@ -83,6 +97,14 @@ export class GatewayAgent implements Agent {
     this.ctx = host.ctx ?? (undefined as unknown as Context)
     void this.inbox
     this.gateway.on('turn', () => this.reconcileIdle())
+    const forwarder = new GatewayEventForwarder(
+      this.session,
+      {
+        ...(this.agentOptions.eventForwarder ?? DEFAULT_EVENT_FORWARDER_OPTIONS),
+        onError: (message) => this.report(new Error(message)),
+      },
+    )
+    this.gateway.on('notification', (notification) => forwarder.forward(notification))
   }
 
   get status(): AgentStatus {

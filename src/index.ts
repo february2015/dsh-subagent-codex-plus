@@ -59,6 +59,10 @@ export interface Config {
   gatewayBindingFile?: string
   /** Approval policy for gateway turns (default `never`). */
   gatewayApprovalPolicy?: string
+  /** Forward Codex intermediate events into the dsh session log (R1-A1), default true. */
+  gatewayEventForwarding?: boolean
+  /** Append the final Codex reply as a dsh surface event when a turn ends, default false (A2). */
+  gatewayAppendFinalMessage?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -71,9 +75,14 @@ export const Config: z<Config> = z.object({
   gatewayEnabled: z.boolean().default(true),
   gatewayBindingFile: z.string().min(1),
   gatewayApprovalPolicy: z.string().min(1),
+  gatewayEventForwarding: z.boolean().default(true),
+  gatewayAppendFinalMessage: z.boolean().default(false),
 })
 
-type ResolvedConfig = Omit<Required<Config>, 'model' | 'gatewayEnabled' | 'gatewayBindingFile' | 'gatewayApprovalPolicy'> & Pick<Config, 'model'>
+type ResolvedConfig = Omit<
+  Required<Config>,
+  'model' | 'gatewayEnabled' | 'gatewayBindingFile' | 'gatewayApprovalPolicy' | 'gatewayEventForwarding' | 'gatewayAppendFinalMessage'
+> & Pick<Config, 'model'>
 
 class CodexProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
@@ -173,6 +182,10 @@ function installGateway(ctx: Context, config: Config): void {
       ? {}
       : { approvalPolicy: config.gatewayApprovalPolicy },
     ...config.env === undefined ? {} : { env: config.env },
+    eventForwarder: {
+      enabled: config.gatewayEventForwarding ?? true,
+      appendFinalMessage: config.gatewayAppendFinalMessage ?? false,
+    },
   })
   const commands = ctx.get('commands')
   if (commands !== undefined) {
