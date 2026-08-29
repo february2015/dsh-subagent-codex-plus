@@ -189,9 +189,9 @@ is relayed straight to that Codex thread — dsh runs no model in between.
   image (R4).
 - DSH-side image admission checks the session model's `inputModalities`: the
   session model must support image input (e.g. select `GLM-5.3 Flash (OCGo)`
-  in the model picker). Vendored `dsh-llm-deepseek` 0.1.0-rc.7 inside the
-  dsh-ocgw bundle needs a small `resolveModels()` patch to preserve
-  `inputModalities` (see TECH-VERIFICATION §3.8).
+  in the model picker). `dsh-ocgw` vendored `dsh-llm-deepseek` is upgraded to
+  `0.1.1-rc.2`, which preserves `inputModalities` natively — no patch needed
+  (see TECH-VERIFICATION §3.8 / §3.8b).
 
 Gateway config fields: `gatewayEnabled` (default true),
 `gatewayBindingFile`, `gatewayApprovalPolicy`, `gatewayEventForwarding`,

@@ -154,10 +154,21 @@ app-server 会推送全量中间事件（消息中间件层）：
 
 - DSH 图片门禁在 `session-controller/src/commands.ts:308-319`：发送 `image` 块前调用 `ctx.llm.resolveModelInfo(provider, model)`，若 `inputModalities` 不含 `image` 则拒绝（`MODEL_DOES_NOT_SUPPORT_IMAGES`）。
 - 根因：运行宿主用的是 dsh-ocgw 插件自带 vendor `@deepseek-ai/dsh-llm-deepseek@0.1.0-rc.7`，其 `resolveModels()` 只保留 `id/name/description/contextWindow/maxTokens`，把 `inputModalities` **字段丢弃**；`modelInfo()` 兜底 `?? ["text"]` → 任何模型（含 GLM）都报不支持图片。
-- 修复（vendor 补丁，备份 `index.js.bak-20260829-codex-plus-vision2`）：给 rc.7 的 `catalogModel` schema 加 `inputModalities`（Schemastery 写法 `z.union(["text","image"])`），并让 `resolveModels()` 透传 `inputModalities: [...inputModalities]`（校验非空、仅 text/image）。
+- ~~修复（vendor 补丁，备份 `index.js.bak-20260829-codex-plus-vision2`）~~ **已被官方升级取代（2026-08-29 晚）**：不再打补丁，直接把 dsh-ocgw 的 devDependencies 全部对齐升级到 `@deepseek-ai/*@0.1.1-rc.2`（含 `dsh-llm-deepseek`），新版本 `resolveAdapterOptions()` **原生保留 `inputModalities`**，无需任何 vendor 修改。
 - 配套：`dsh-ocgw/src/provider.ts` 模型目录为 `glm-5.3-flash` 声明 `inputModalities: ["text","image"]`；`session.modelCatalog`（POST /api/session.models）实测 ocgo-gateway 组包含 GLM-5.3 Flash (OCGo)。
-- 独立验证：`node --input-type=module` 直调 rc.7 `resolveAdapterOptions` → `glm-5.3-flash` 输出 `inputModalities: ["text","image"]`。
+- 独立验证（升级后）：`node --input-type=module` 直调 0.1.1-rc.2 `resolveAdapterOptions` → `glm-5.3-flash` 输出 `inputModalities: ["text","image"]`、deepseek 模型 `["text"]`；`npm run typecheck` + `npm run build` 全绿；ocgo-gateway 提交 `222c04b`。
 - 会话模型必须切到 GLM（`session.selectModel` RPC）门禁才放行；DeepSeek V4 Flash 仍为 text-only。
+
+### 3.8b 升级后真机复验 + 排障记录（2026-08-29 晚）
+
+- 复验环境：launchd 托管的 `dsh web`（3080，`com.robin.dsh-web`，已加 `StandardOutPath/StandardErrorPath`）+ Chrome headless + 真实 `codex app-server --stdio`。
+- 图片门禁：`session.prompt`（含 320×240 红黑棋盘 PNG）在 `glm-5.3-flash` 下返回 `{"ok":true,"value":{"accepted":true}}`——升级后不再走任何补丁。
+- 真网关全链路：附件物化 `dsh-codex-plus-img-oHxCCr/img-1-sha256:d6fe5.png` → GLM 视觉桥描述注入 → Codex 线程收到 `userMessage`（图片 + 描述）→ 答复 `红色与深黑色相间。`（Codex 真实看图正确）。
+- 排障记录（双实例并发写入导致会话日志损坏）：
+  - 同时跑 `dsh web`（3080）与 `dsh --profile web --port 3099` 共用同一 profile，两会话进程各自推进 seq 计数器，向同一 `session.jsonl.zstd` 写入时产生 **seq 回退**（38729→38719），`scanLog` 判定 `corrupt session log: seq gap`，`session.history`/`session.prompt` resume 全部失败。
+  - 修复：备份后在首个损坏行（最后一个完好事件 `turn/end seq 38729`）处**截断日志**，并按 dsh 存储格式重编码为「首帧=header 行 + 每批事件一帧」的 zstd 多帧文件（`assertZstdHeaderFrame` 要求首帧恰好一行 header）→ `session.history` 恢复 `ok:true`。
+  - 教训：dsh web 实例**必须单例运行**，禁止多实例共享同一 profile 并发写会话；测试用第二实例与主实例错开时间/端口，且不要同时 resume 同一会话。
+- 自动重连锁竞争（C3 已知限制）：若重启 dsh web 时旧 app-server 仍持有线程写锁（`~/.codex/thread-writer-locks/<thread>.lock`），新 app-server `thread/resume` 会报 `already has an active writer`，`installAutoReattach` 失败后**无重试机制**（本次复验即因此一度无法挂载）。锁随持有进程退出而释放（flock 语义），仅需再次触发会话 resume 即可重连；正常单实例场景不受影响，但值得后续给 manager 加重试。
 
 ### 3.9 真机浏览器端到端实测（2.3/2.4/3.2，2026-08-29）
 

@@ -174,7 +174,7 @@ Codex 线程 1:1 绑定，composer 的所有输入/输出直接搬运给该 Code
 - 状态显示用官方槽位（`conversation.session.header` 直连徽标、`conversation.composer.dock` 状态条、`conversation.input.dock` 排队列表）；控制操作放在悬浮窗（`shell.overlay`，dsh-pet 模式）。
 - Codex 中间事件（推理/agent 消息增量、工具调用）以日志型事件转发进 dsh 会话流（R1-A1），不进模型上下文（A2）。
 - 图片：composer 附件透传为 Codex `localImage`；开启视觉兜底时，图片字节还会经 ocgo 网关 `glm-5.3-flash` 生成描述文本随图注入（R4）。
-- DSH 侧图片门禁检查会话模型的 `inputModalities`：会话模型需支持图片输入（如模型选择器里选 `GLM-5.3 Flash (OCGo)`）。dsh-ocgw bundle 内 vendor 的 `dsh-llm-deepseek` 0.1.0-rc.7 需小补丁让 `resolveModels()` 保留 `inputModalities`（见 TECH-VERIFICATION §3.8）。
+- DSH 侧图片门禁检查会话模型的 `inputModalities`：会话模型需支持图片输入（如模型选择器里选 `GLM-5.3 Flash (OCGo)`）。dsh-ocgw 的 `dsh-llm-deepseek` 已升级到 `0.1.1-rc.2`，`inputModalities` 原生保留，无需补丁（见 TECH-VERIFICATION §3.8 / §3.8b）。
 
 网关配置字段：`gatewayEnabled`（默认 true）、`gatewayBindingFile`、`gatewayApprovalPolicy`、
 `gatewayEventForwarding`、`gatewayAppendFinalMessage`、`gatewayVisionEnabled`、
