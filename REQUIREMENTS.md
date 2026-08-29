@@ -65,13 +65,35 @@
   选择/控制类用悬浮窗口（队列操作、网关开关）。
 - 新增（Q3=B 定稿）：**图片/附件透传**——网关模式 v1 即支持把 dsh 输入框的图片/附件原样转给 Codex。
 
+## R4 视觉兜底路由（Vision Bridge，2026-08-29 用户新增定稿）
+
+**需求**：主模型（Codex 内 / DSH 内）不支持视觉时，遇到图片一律交给视觉模型 `glm-5.3-flash` 处理（理解/描述/OCR），
+结果作为文本继续走原流程。该策略**不止在 Codex 里生效，在 DSH 里同样生效**。
+
+**已实测（2026-08-29）**
+- 渠道：ocgo 网关 `https://ocgo.zlxy.sd.cn/v1`（OpenAI 兼容 chat/completions），`Authorization: Bearer ocgo_...`（同 `~/.codex/config.toml` 的 `model_providers.ocgw`）。
+- 模型清单含：`glm-5.3-flash`、`glm-5.1`、`deepseek-v4-flash/pro`、`kimi-k2.6`、`qwen3.6-plus`。
+- 视觉实测：`image_url` 传 base64 data URL（PNG），prompt "What color is this image?" → 正确回答 `Maroon`。
+
+**已定决策**
+- V1：图片输入统一走 Vision Bridge 预处理：检测输入含 `image/localImage` → 调 `glm-5.3-flash` 生成结构化描述 → 文本注入原消息，
+  再交给 Codex（`turn/start`/queue 的 text 输入）或 DSH 主对话（不依赖模型本身视觉能力）。
+- V2（备选，不阻塞）：Codex 侧也可用 per-turn `model` 覆盖（`TurnStartParams.model` 已验证）直接指定视觉模型跑那一轮，
+  保留给"看图执行型"任务（如读截图改代码）选用；V1 为默认，节省 token 且对无视觉模型最通用。
+- 适用层级：
+  - **我们的插件内（委派式 + 网关式输入预处理管线）**：完全可控，直接实现 V1。
+  - **DSH 主对话（非网关路径）**：dsh 核心模型路由不在插件控制内；实现方式二选一——
+    (a) 用户在 dsh 侧把主模型配置为视觉模型；(b) 若 dsh 提供附件/输入预处理钩子则同样走 GLM 兜底（**待验证**，列入技术验证清单）。
+- 状态显示：Vision Bridge 命中时，在 `conversation.composer.dock` 状态条显示"图片已转 glm-5.3-flash 理解"，可追溯。
+
 ## 已确认决策（Q1-Q5，2026-08-29 定稿）
 
 - Q1：**保留解除绑定**。断开直连后 dsh 恢复普通模式；Codex 线程保留，可随时重新 attach 回同一会话。
 - Q2：**网关模式下 R2 全部生效**。忙时新消息排队、悬浮窗可插入/打断/看队列；悬浮窗与队列逻辑在委派式/网关式两种模式下共用同一套组件。
 - Q3：**v1 即支持图片/附件透传**（非文本先行）。实现要点：
   - dsh composer 的附件 → Codex `turn/start`/queue 的 image UserInput（本地路径/URL）转换；
-  - 图片大小/格式校验、失败提示；附件类型（图片先行，文件类后续评估）。
+  - 图片大小/格式校验、失败提示；附件类型（图片先行，文件类后续评估）；
+  - **视觉兜底按 R4**：图片不依赖目标模型视觉能力，统一走 `glm-5.3-flash` Vision Bridge（Codex 内与 DSH 内同策略）。
 - Q4：**双向唯一**。一个 Codex 线程只允许被一个 dsh 会话绑定，重复绑定拒绝；
   同一 dsh 会话多标签页共享同一绑定（天然串行，不算冲突）。
 - Q5：**委派式与网关式并存**。一个 dsh 对话可挂多个委派式 Codex 子会话（模型触发），
@@ -89,3 +111,4 @@
 - ✅ 队列/steer 协议实测：临时线程拒绝队列（`-32600`）；持久线程 queue/add+auto-drain、queue/list/update/delete/reorder/start、`turn/steer` 全部通过。
 - ✅ 图片透传实测：`localImage` 被 app-server 接受并转为 `input_image` base64；dsh `session.prompt` 图片原生支持（子代理续聊被拒 `SUBAGENT_IMAGE_UNSUPPORTED`，网关不走该路径）。
 - ✅ C3 持久绑定实测：持久线程 JSONL 落盘 `~/.codex/sessions/...`，`thread/resume {threadId}` 原生支持重启恢复。
+- ✅ R4 视觉兜底实测：ocgo 网关含 `glm-5.3-flash`，`image_url` base64 传图实测识别成功（红色 PNG → Maroon）。

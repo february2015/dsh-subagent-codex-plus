@@ -58,6 +58,12 @@
 - `localImage` **实测通过**：`turn/start` 直接接受本地路径；Codex 在 JSONL 中自动转为 `input_image`（base64 data URL + detail）下发给模型（见 `~/.codex/sessions/2026/08/29/rollout-2026-08-29T13-18-57-01a04bf4-*.jsonl`）。
 - `turn/start` 还支持 per-turn 覆盖：`cwd`、`model`、`effort`、`approvalPolicy`、`sandboxPolicy`、`summary`（`v2/TurnStartParams.ts`）—— C2（用当前 cwd + 全局配置）可逐轮控制。
 
+#### 2.4.1 视觉兜底渠道（R4，实测）
+
+- 渠道：ocgo 网关 `https://ocgo.zlxy.sd.cn/v1`（OpenAI 兼容），`GET /v1/models` 实测含 `glm-5.3-flash`、`glm-5.1`、`deepseek-v4-flash/pro`、`kimi-k2.6`、`qwen3.6-plus`。
+- 视觉实测：`POST /v1/chat/completions`，`image_url` 传 base64 data URL（1x1 红色 PNG），glm-5.3-flash 回答 `Maroon` —— 视觉能力确认。
+- 实现形态：Vision Bridge（图片→glm-5.3-flash 结构化描述→文本注入），Codex 内与 DSH 内同策略；Codex 侧另可选 per-turn `model` 覆盖直接跑视觉模型（`TurnStartParams.model`）。
+
 ### 2.5 中间过程事件流（R1 依据，probe2/probe3 实测）
 
 app-server 会推送全量中间事件（消息中间件层）：
