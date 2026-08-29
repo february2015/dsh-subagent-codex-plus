@@ -59,7 +59,7 @@ export class GatewayManager {
    * @returns the attachment.
    */
   async attach(sessionId: SessionId, threadId?: string): Promise<AttachedGateway> {
-    const session = this.ctx.sessions.get(sessionId)
+    const session = this.ctx.get('sessions')?.get(sessionId)
     if (session === undefined) {
       throw new Error(`gateway: session "${sessionId}" is not live; open it in the UI first`)
     }

@@ -1,14 +1,15 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.client.json",
   "compilerOptions": {
     "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
     "outDir": "lib",
     "rootDir": "src",
     "rewriteRelativeImportExtensions": true,
-    "allowImportingTsExtensions": false,
-    "declaration": true
+    "allowImportingTsExtensions": false
   },
   "include": [
-    "src"
+    "src/client"
   ]
 }

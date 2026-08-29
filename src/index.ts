@@ -33,6 +33,7 @@ import {
 import { applyGatewayCommands } from './commands.ts'
 import { GatewayBindingStore } from './gateway/binding.ts'
 import { GatewayManager } from './gateway/manager.ts'
+import { GatewayUiService } from './gateway/ui.ts'
 
 export const name = 'subagent-codex-plus'
 export const inject = ['subagents', 'subprocess']
@@ -213,7 +214,10 @@ function installGateway(ctx: Context, config: Config): void {
   // The gateway needs the live session/agent registries, which only a full
   // host composition provides; lean compositions (headless one-shots, the
   // official loader fixture) simply skip it.
-  if (ctx.get('agents') === undefined || ctx.get('sessions') === undefined) return
+  if (ctx.get('agents') === undefined || ctx.get('sessions') === undefined) {
+    ctx.logger?.warn?.('[codex-plus] installGateway skipped: agents/sessions missing')
+    return
+  }
   const bindingFile = config.gatewayBindingFile
     ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'codex-plus-gateway.json')
   const store = new GatewayBindingStore(bindingFile)
@@ -235,5 +239,38 @@ function installGateway(ctx: Context, config: Config): void {
   if (commands !== undefined) {
     applyGatewayCommands((definition) => commands.register(definition), manager)
   }
+  // Browser surface: same-origin /api/codex-plus/* routes for the client
+  // slots and floating control window. The host webserver usually registers
+  // after this plugin's fiber settles (it is a sibling entry with its own
+  // startup order), so wire the routes lazily: register immediately when the
+  // service is already up, otherwise wait for `internal/service`. Headless
+  // profiles never provide webServer and simply skip the browser surface.
+  wireGatewayUi(ctx, manager)
   manager.installAutoReattach()
+}
+
+/** Lazily register the browser API surface once the host webserver exists. */
+function wireGatewayUi(ctx: Context, manager: GatewayManager): void {
+  const register = (webServer: unknown): void => {
+    const ui = new GatewayUiService(ctx, manager)
+    for (const route of ui.routes()) {
+      ctx.effect(() => {
+        const unregister = (webServer as {
+          register(route: unknown): () => void
+        }).register(route)
+        return () => unregister()
+      }, `gateway: ui route ${route.path}`)
+    }
+  }
+  const webServer = ctx.get('webServer')
+  if (webServer !== undefined) {
+    register(webServer)
+    return
+  }
+  let wired = false
+  ctx.on('internal/service', (name: string, value: unknown) => {
+    if (wired || name !== 'webServer' || value === undefined) return
+    wired = true
+    register(value)
+  })
 }

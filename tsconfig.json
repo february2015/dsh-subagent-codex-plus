@@ -12,6 +12,7 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
       "@deepseek-ai/cordis": [
@@ -46,10 +47,16 @@
       ],
       "@deepseek-ai/dsh-commands": [
         "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-commands/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-host-webserver": [
+        "/Users/robin/.dsh/profiles/node_modules/@deepseek-ai/dsh-host-webserver/lib/types/index.d.ts"
       ]
     }
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/client"
   ]
 }

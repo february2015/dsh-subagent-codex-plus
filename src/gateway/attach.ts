@@ -86,11 +86,14 @@ export async function attachGateway(
   sessionId: SessionId,
   options: AttachGatewayOptions,
 ): Promise<AttachedGateway> {
-  const session = ctx.sessions.get(sessionId)
+  const session = ctx.get('sessions')?.get(sessionId)
   if (session === undefined) {
     throw new Error(`gateway: session "${sessionId}" is not live; open it in the UI first`)
   }
-  const registry = ctx.agents
+  const registry = ctx.get('agents')
+  if (registry === undefined) {
+    throw new Error('gateway: agents service is not available')
+  }
   const existing = registry.get(sessionId)
   if (existing !== undefined && isGatewayAgent(existing)) {
     throw new Error(`gateway: session "${sessionId}" is already attached to Codex`)
@@ -152,7 +155,7 @@ export async function attachGateway(
       // it through the entry's own teardown so `session/disposed` fires: the
       // persistence coordinator releases its live-owner claim on that event,
       // which the host's ordinary resume path requires on the next prompt.
-      detachSessionEntry(ctx.sessions, sessionId)
+      detachSessionEntry(ctx.get('sessions'), sessionId)
       await gateway.dispose()
       await imageResolver.dispose()
     },

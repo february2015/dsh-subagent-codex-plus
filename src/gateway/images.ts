@@ -43,7 +43,11 @@ export class GatewayImageResolver {
     attachment: ImageAttachmentRef,
     vision?: VisionBridge,
   ): Promise<ResolvedImage> {
-    const stored = await this.ctx.attachments.readImage(attachment)
+    const attachments = this.ctx.get('attachments')
+    if (attachments === undefined) {
+      throw new Error('gateway: attachments service is not available; image passthrough disabled')
+    }
+    const stored = await attachments.readImage(attachment)
     const dir = await this.ensureDir()
     this.index += 1
     const id = String(attachment.attachmentId).slice(0, 12)
