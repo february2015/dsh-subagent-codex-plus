@@ -168,7 +168,7 @@ app-server 会推送全量中间事件（消息中间件层）：
   - 同时跑 `dsh web`（3080）与 `dsh --profile web --port 3099` 共用同一 profile，两会话进程各自推进 seq 计数器，向同一 `session.jsonl.zstd` 写入时产生 **seq 回退**（38729→38719），`scanLog` 判定 `corrupt session log: seq gap`，`session.history`/`session.prompt` resume 全部失败。
   - 修复：备份后在首个损坏行（最后一个完好事件 `turn/end seq 38729`）处**截断日志**，并按 dsh 存储格式重编码为「首帧=header 行 + 每批事件一帧」的 zstd 多帧文件（`assertZstdHeaderFrame` 要求首帧恰好一行 header）→ `session.history` 恢复 `ok:true`。
   - 教训：dsh web 实例**必须单例运行**，禁止多实例共享同一 profile 并发写会话；测试用第二实例与主实例错开时间/端口，且不要同时 resume 同一会话。
-- 自动重连锁竞争（C3 已知限制）：若重启 dsh web 时旧 app-server 仍持有线程写锁（`~/.codex/thread-writer-locks/<thread>.lock`），新 app-server `thread/resume` 会报 `already has an active writer`，`installAutoReattach` 失败后**无重试机制**（本次复验即因此一度无法挂载）。锁随持有进程退出而释放（flock 语义），仅需再次触发会话 resume 即可重连；正常单实例场景不受影响，但值得后续给 manager 加重试。
+- 自动重连锁竞争（C3，已修复）：若重启 dsh web 时旧 app-server 仍持有线程写锁（`~/.codex/thread-writer-locks/<thread>.lock`），新 app-server `thread/resume` 会报 `already has an active writer`，本次复验即因此一度无法挂载。锁随持有进程退出而释放（flock 语义）。已给 `GatewayManager.installAutoReattach` 增加**指数退避重试**（`src/gateway/manager.ts`：识别 `already has an active writer` 类错误 → 1s/2s/4s/8s/16s 至多 5 次，约 31s 窗口；重试前校验绑定与 session 仍有效，detach/unbind 后自动放弃），重启后无需人工干预即可恢复直连。
 
 ### 3.9 真机浏览器端到端实测（2.3/2.4/3.2，2026-08-29）
 

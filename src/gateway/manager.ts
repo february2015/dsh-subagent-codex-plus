@@ -7,13 +7,30 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { attachGateway, isGatewayAgent, type AttachedGateway } from './attach.ts'
 import type { GatewayEventForwarderOptions } from './events.ts'
 import type { VisionBridge } from './vision.ts'
 import type { GatewayBinding } from './binding.ts'
 import { GatewayBindingStore } from './binding.ts'
+
+/** Base delay for auto-reattach retries after transient writer-lock contention. */
+const REATTACH_RETRY_BASE_MS = 1000
+/** Maximum number of backoff retries (1s, 2s, 4s, 8s, 16s ≈ 31s window). */
+const REATTACH_RETRY_MAX_ATTEMPTS = 5
+
+/**
+ * Whether a resume failure is transient contention on the thread's writer
+ * lock: when a previous app-server still holds
+ * `~/.codex/thread-writer-locks/<thread>.lock` after a dsh restart,
+ * `thread/resume` fails with "already has an active writer". The lock is
+ * released when that process exits, so retrying with backoff recovers without
+ * user intervention.
+ */
+function isRetryableResumeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /already has an active writer|active writer|writer lock/i.test(message)
+}
 
 export interface GatewayManagerOptions {
   /** App-server argv for every gateway (defaults to the package-local codex bin). */
@@ -35,6 +52,7 @@ export interface GatewayManagerOptions {
 /** Owns one live attachment per session plus its durable binding. */
 export class GatewayManager {
   private readonly attached = new Map<SessionId, AttachedGateway>()
+  private readonly reattachRetries = new Map<SessionId, { attempt: number; timer: NodeJS.Timeout }>()
 
   constructor(
     private readonly ctx: Context,
@@ -115,25 +133,33 @@ export class GatewayManager {
   /**
    * Restore bindings after a dsh restart: whenever the host publishes a fresh
    * agent for a bound session, replace it with a gateway resumed on the same
-   * durable Codex thread (C3). Skips our own agents.
+   * durable Codex thread (C3). Skips our own agents. Resume failures caused
+   * by a still-held thread writer lock are retried with backoff.
    */
   installAutoReattach(): void {
     this.ctx.on('agent/created', ({ agent }) => {
       if (isGatewayAgent(agent)) return
-      const binding = this.store.get(agent.session.id)
+      const sessionId = agent.session.id
+      const binding = this.store.get(sessionId)
       if (binding === undefined) return
-      void this.restore(agent, binding).catch((error: unknown) => {
-        this.ctx.logger?.warn?.(`[gateway] auto-reattach failed for "${agent.session.id}": ${String(error)}`)
+      void this.restore(sessionId, binding).catch((error: unknown) => {
+        this.ctx.logger?.warn?.(`[gateway] auto-reattach failed for "${sessionId}": ${String(error)}`)
+        if (isRetryableResumeError(error)) {
+          this.scheduleReattachRetry(sessionId, binding)
+        }
       })
     })
   }
 
-  private async restore(agent: Agent, binding: GatewayBinding): Promise<void> {
+  private async restore(sessionId: SessionId, binding: GatewayBinding): Promise<void> {
+    const session = this.ctx.get('sessions')?.get(sessionId)
+    if (session === undefined) {
+      throw new Error(`gateway: session "${sessionId}" is not live; open it in the UI first`)
+    }
     // Detach the just-published loop agent by swapping it out; the manager's
     // `attach` path would refuse because the binding already exists.
-    const sessionId = agent.session.id
     const attached = await attachGateway(this.ctx, sessionId, {
-      cwd: agent.session.header.cwd ?? process.cwd(),
+      cwd: session.header.cwd ?? process.cwd(),
       ...this.options.argv === undefined ? {} : { argv: this.options.argv },
       ...this.options.model === undefined ? {} : { model: this.options.model },
       ...this.options.approvalPolicy === undefined ? {} : { approvalPolicy: this.options.approvalPolicy },
@@ -144,5 +170,36 @@ export class GatewayManager {
       threadId: binding.codexThreadId,
     })
     this.attached.set(sessionId, attached)
+  }
+
+  /**
+   * Schedule a backoff retry of a failed auto-reattach. At most one in-flight
+   * retry per session; the retry drops itself when the binding or session goes
+   * away meanwhile.
+   */
+  private scheduleReattachRetry(sessionId: SessionId, binding: GatewayBinding, attempt = 1): void {
+    if (attempt > REATTACH_RETRY_MAX_ATTEMPTS || this.reattachRetries.has(sessionId)) return
+    const delay = REATTACH_RETRY_BASE_MS * 2 ** (attempt - 1)
+    const timer = setTimeout(() => {
+      this.reattachRetries.delete(sessionId)
+      void this.runReattachRetry(sessionId, binding, attempt)
+    }, delay)
+    timer.unref?.()
+    this.reattachRetries.set(sessionId, { attempt, timer })
+  }
+
+  private async runReattachRetry(sessionId: SessionId, binding: GatewayBinding, attempt: number): Promise<void> {
+    // The user may have detached/unbound or the session may have closed while
+    // we were waiting; drop the retry in those cases.
+    if (this.store.get(sessionId) === undefined || this.attached.has(sessionId)) return
+    try {
+      await this.restore(sessionId, binding)
+      this.ctx.logger?.info?.(`[gateway] auto-reattach recovered for "${sessionId}" after retry ${attempt}`)
+    } catch (error) {
+      this.ctx.logger?.warn?.(`[gateway] auto-reattach retry ${attempt} failed for "${sessionId}": ${String(error)}`)
+      if (isRetryableResumeError(error)) {
+        this.scheduleReattachRetry(sessionId, binding, attempt + 1)
+      }
+    }
   }
 }
