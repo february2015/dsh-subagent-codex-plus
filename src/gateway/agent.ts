@@ -100,6 +100,8 @@ export class GatewayAgent implements Agent {
   ctx: Context
 
   private pendingInject: string[] = []
+  /** Prompts waiting for their Codex turn to start (released as durable `user/message`). */
+  private readonly pendingUserMessages: UserMessage[] = []
   private readonly idleResolvers = new Set<() => void>()
   private maintenanceSignal: AbortSignal | undefined
 
@@ -123,6 +125,12 @@ export class GatewayAgent implements Agent {
       },
     )
     this.gateway.on('notification', (notification) => forwarder.forward(notification))
+    // The forwarder listener above runs first, so `turn/start`/`step/start`
+    // land before the prompt; the prompt then opens its own turn on the
+    // surface instead of piling up in the host inbox queue.
+    this.gateway.on('notification', (notification) => {
+      if (notification.method === 'turn/started') this.releasePendingPrompt()
+    })
   }
 
   get status(): AgentStatus {
@@ -187,15 +195,28 @@ export class GatewayAgent implements Agent {
   private dispatch(kind: 'followup' | 'steer', message: UserMessage): void {
     const injected = this.pendingInject
     this.pendingInject = []
-    // Mirror the loop agent's durable inbox recording so the dsh UI and log
-    // show the user's prompt even though no dsh model processes it.
+    // Buffer the prompt until the Codex turn actually starts, mirroring the
+    // loop agent's claim→user/message path; the durable record then shows the
+    // prompt inside its own turn instead of leaving it in the inbox queue.
+    this.pendingUserMessages.push(message)
+    void this.resolveAndRoute(kind, message, injected).catch((error: unknown) => {
+      // The submission never reached the wire: drop the buffered prompt so it
+      // cannot attach to a later, unrelated turn.
+      const index = this.pendingUserMessages.indexOf(message)
+      if (index >= 0) this.pendingUserMessages.splice(index, 1)
+      this.report(error)
+    })
+  }
+
+  /** Append the next buffered prompt as a durable surface `user/message`. */
+  private releasePendingPrompt(): void {
+    const message = this.pendingUserMessages.shift()
+    if (message === undefined) return
     try {
-      this.inbox.append(kind === 'steer' ? 'next-step' : 'next-turn', message)
+      this.session.append('user/message', message, { surfaceOp: 'append' })
     } catch (error: unknown) {
       this.report(error)
-      return
     }
-    void this.resolveAndRoute(kind, message, injected).catch((error: unknown) => this.report(error))
   }
 
   private async resolveAndRoute(

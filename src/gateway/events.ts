@@ -3,11 +3,17 @@
  *
  * Every Codex turn/item/delta is projected onto the dsh session's append-only
  * log as **log-only** events (`turn/start`, `turn/end`, `step/start`,
- * `step/end`, `assistant/chunk`, `tool/call`). These types never carry a
- * `surfaceOp`, so they never enter the model-visible surface (A2): the dsh
- * host keeps building requests solely from the session's own messages, while
- * the session log preserves the full Codex intermediate transcript for UI,
- * tooling, and replay.
+ * `step/end`, `assistant/chunk`, `tool/call`), which never carry a
+ * `surfaceOp` and therefore never enter the model-visible surface (A2).
+ *
+ * Two message-producing events DO join the surface (`surfaceOp: 'append'`):
+ * the user prompt is recorded by the agent when its turn starts, and on
+ * `turn/completed` the streamed deltas are assembled into a durable
+ * `assistant/message`. Without that durable message the chat fold has no
+ * settled node and renders every finished reply as a synthetic interrupted
+ * node ("已停止"); with it the reply renders as a normal completed bubble
+ * while the session log still preserves the full Codex intermediate
+ * transcript for UI, tooling, and replay.
  *
  * Mapping (verified against a real `codex app-server --stdio` stream, see
  * TECH-VERIFICATION §3.6):
@@ -20,7 +26,7 @@
  * @module dsh-subagent-codex-plus/gateway/events
  */
 
-import type { CallId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, type CallId, type ContentBlock, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { CodexGatewayNotification } from './wire.ts'
 
@@ -28,20 +34,12 @@ import type { CodexGatewayNotification } from './wire.ts'
 export interface GatewayEventForwarderOptions {
   /** Append Codex turn/step/chunk/tool events to the session log (A1). */
   readonly enabled: boolean
-  /**
-   * Append a final `assistant/message` surface event when a turn completes.
-   * Off by default: the surface feeds the dsh model context (A2), and the
-   * gateway never lets the dsh model process gateway turns, so a surface
-   * append would only bloat the next request header with text dsh never reads.
-   */
-  readonly appendFinalMessage: boolean
   /** Forwarding-side diagnostics sink (defaults to no-op). */
   readonly onError?: (message: string) => void
 }
 
 export const DEFAULT_EVENT_FORWARDER_OPTIONS: GatewayEventForwarderOptions = {
   enabled: true,
-  appendFinalMessage: false,
 }
 
 /** Item types whose lifecycle carries intermediate work worth logging. */
@@ -98,6 +96,12 @@ export class GatewayEventForwarder {
   private step = 0
   private activeTurnId: string | undefined
   private stepOpen = false
+  /** Reasoning deltas keyed by Codex item id, in first-seen order. */
+  private readonly reasoningByItem = new Map<string, { readonly itemId: string; readonly index: number; text: string }>()
+  private readonly reasoningOrder: string[] = []
+  /** Text deltas keyed by content index (agentMessage deltas carry none). */
+  private readonly textByIndex = new Map<number, string>()
+  private readonly textOrder: number[] = []
 
   constructor(
     private readonly session: Session,
@@ -105,10 +109,10 @@ export class GatewayEventForwarder {
   ) {
     // `Session.append` is a class method that reads instance state; keep the
     // reference bound so the projection never throws on a detached `this`.
-    this.appendBound = session.append.bind(session) as (type: string, data: unknown) => unknown
+    this.appendBound = session.append.bind(session) as (type: string, data: unknown, opts?: unknown) => unknown
   }
 
-  private readonly appendBound: (type: string, data: unknown) => unknown
+  private readonly appendBound: (type: string, data: unknown, opts?: unknown) => unknown
 
   forward(notification: CodexGatewayNotification): void {
     if (!this.options.enabled) return
@@ -146,6 +150,7 @@ export class GatewayEventForwarder {
   private onTurnStarted(params: Record<string, unknown>): void {
     const turn = asRecord(params.turn)
     const turnId = readString(turn?.id, 'turn id') ?? `codex-${this.turn + 1}`
+    this.resetAccumulators()
     // A new active turn begins; if the server reported a second start without
     // a completion (e.g. resume racing), close the stale projection first.
     if (this.activeTurnId !== undefined) {
@@ -168,7 +173,9 @@ export class GatewayEventForwarder {
       turn: this.turn,
       reason: turnEndReason(turn?.status, turn?.error),
     })
+    this.appendFinalMessage(turn?.status)
     this.activeTurnId = undefined
+    this.resetAccumulators()
   }
 
   private onItemStarted(params: Record<string, unknown>): void {
@@ -183,14 +190,64 @@ export class GatewayEventForwarder {
   private onTextDelta(params: Record<string, unknown>): void {
     const delta = readString(params.delta, 'delta')
     if (delta === undefined || this.activeTurnId === undefined) return
-    this.appendChunk({ type: 'text-delta', index: 0, text: delta })
+    const index = typeof params.contentIndex === 'number' ? params.contentIndex : 0
+    if (!this.textByIndex.has(index)) this.textOrder.push(index)
+    this.textByIndex.set(index, (this.textByIndex.get(index) ?? '') + delta)
+    this.appendChunk({ type: 'text-delta', index, text: delta })
   }
 
   private onReasoningDelta(params: Record<string, unknown>): void {
     const delta = readString(params.delta, 'delta')
     if (delta === undefined || this.activeTurnId === undefined) return
+    const itemId = readString(params.itemId, 'item id') ?? `reasoning-${this.reasoningOrder.length}`
     const index = typeof params.contentIndex === 'number' ? params.contentIndex : 0
+    let accumulator = this.reasoningByItem.get(itemId)
+    if (accumulator === undefined) {
+      accumulator = { itemId, index, text: '' }
+      this.reasoningByItem.set(itemId, accumulator)
+      this.reasoningOrder.push(itemId)
+    }
+    accumulator.text += delta
     this.appendChunk({ type: 'reasoning-delta', index, text: delta })
+  }
+
+  /**
+   * Assemble the streamed deltas into the durable `assistant/message` that
+   * closes the step on the surface. Interrupted turns carry `interrupted`
+   * exactly like a cancelled dsh turn, so the UI marks only genuinely
+   * aborted replies; completed turns settle normally.
+   */
+  private appendFinalMessage(status: unknown): void {
+    const blocks: ContentBlock[] = []
+    for (const itemId of this.reasoningOrder) {
+      const accumulator = this.reasoningByItem.get(itemId)
+      if (accumulator !== undefined && accumulator.text !== '') {
+        blocks.push({ type: 'reasoning', text: accumulator.text })
+      }
+    }
+    for (const index of this.textOrder) {
+      const text = this.textByIndex.get(index)
+      if (text !== undefined && text !== '') {
+        blocks.push({ type: 'text', text })
+      }
+    }
+    const message = createAssistantMessage({
+      content: blocks,
+      source: { provider: 'codex', model: 'codex' },
+    })
+    this.appendSurface('assistant/message', {
+      turn: this.turn,
+      step: this.step,
+      message,
+      ...status === 'interrupted' ? { interrupted: true } : {},
+    })
+  }
+
+  private resetAccumulators(): void {
+    this.reasoningByItem.clear()
+    this.reasoningOrder.length = 0
+    this.textByIndex.clear()
+    this.textOrder.length = 0
   }
 
   private recordToolCall(item: Record<string, unknown>): void {
@@ -235,5 +292,10 @@ export class GatewayEventForwarder {
     // The six event types are log-only (never surface), so no SurfaceIntent
     // is required; the cast widens the generic append signature.
     void this.appendBound(type, data)
+  }
+
+  /** Append a message-producing event on the model-visible surface (A2). */
+  private appendSurface(type: 'user/message' | 'assistant/message', data: unknown): void {
+    void this.appendBound(type, data, { surfaceOp: 'append' })
   }
 }

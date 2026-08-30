@@ -62,8 +62,6 @@ export interface Config {
   gatewayApprovalPolicy?: string
   /** Forward Codex intermediate events into the dsh session log (R1-A1), default true. */
   gatewayEventForwarding?: boolean
-  /** Append the final Codex reply as a dsh surface event when a turn ends, default false (A2). */
-  gatewayAppendFinalMessage?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -77,7 +75,6 @@ export const Config: z<Config> = z.object({
   gatewayBindingFile: z.string().min(1),
   gatewayApprovalPolicy: z.string().min(1),
   gatewayEventForwarding: z.boolean().default(true),
-  gatewayAppendFinalMessage: z.boolean().default(false),
 })
 
 type ResolvedConfig = Omit<
@@ -87,7 +84,6 @@ type ResolvedConfig = Omit<
   | 'gatewayBindingFile'
   | 'gatewayApprovalPolicy'
   | 'gatewayEventForwarding'
-  | 'gatewayAppendFinalMessage'
 > & Pick<Config, 'model'>
 
 class CodexProvider implements SubagentProvider {
@@ -193,7 +189,6 @@ function installGateway(ctx: Context, config: Config): void {
     ...config.env === undefined ? {} : { env: config.env },
     eventForwarder: {
       enabled: config.gatewayEventForwarding ?? true,
-      appendFinalMessage: config.gatewayAppendFinalMessage ?? false,
     },
   })
   const commands = ctx.get('commands')
