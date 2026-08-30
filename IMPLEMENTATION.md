@@ -35,3 +35,4 @@
 - [x] 3.4 依赖升级与真机闭环复验：`extensions/dsh-ocgw` 升 `@deepseek-ai/*@0.1.1-rc.2`（`dsh-llm-deepseek` 原生 `inputModalities`，删除 vendor 补丁）；3080 单实例下 图片门禁→GLM 视觉桥→Codex 看图 真机回归通过；修复双实例并发写坏会话日志（截断重编码）
 - [x] 3.5 自动重连抗锁竞争：`GatewayManager.installAutoReattach` 对 `already has an active writer` 类 resume 失败增加指数退避重试（1s→16s，至多 5 次），重启后无需人工干预恢复直连
 - [x] 3.6 视觉兜底迁移到 OCGW 体系（R4 架构定稿 2026-08-30）：删除插件内 `VisionBridge`/`gatewayVision*` 配置；能力归 `dsh-ocgw`（`ocgw-vision` 服务，cordis `ctx.provide`），本插件经 `ctx.get('ocgw-vision', false)` 惰性消费（strict=false 跨 fiber），服务缺失/失败优雅降级纯透传；真机验证：纯红 PNG → `ocgw-vision` 描述注入 → Codex 答复"红色。"
+- [x] 3.7 跨重启 turn 编号延续 + 会话修复（2026-08-30）：修复 `GatewayEventForwarder` 每次启动从 1 重新编号导致持久日志出现重复 `turn` 序号、dsh 前端对话装配器崩溃（`more than one start Match`）从而整段对话不显示的问题；forwarder 构造时从会话日志续接最大 turn 编号；新增 `scripts/renumber-sessions.mjs` 按 zstd 多帧格式逐帧重编号存量污染会话（含备份）。真机验证：修复后历史消息完整渲染，DSH 重启后新 turn 从 21 继续（非 1），`assistant/message` 在 `turn/end` 前落盘。

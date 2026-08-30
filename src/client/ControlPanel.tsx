@@ -118,6 +118,9 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
   const drag = useRef<{ dx: number; dy: number } | null>(null)
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    // The close button lives in the title bar; never capture a drag over it,
+    // otherwise the synthetic click never reaches the button.
+    if ((event.target as HTMLElement).closest('button') !== null) return
     drag.current = { dx: event.clientX - panel.x, dy: event.clientY - panel.y }
     ;(event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId)
   }, [panel.x, panel.y])
@@ -177,6 +180,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
           title="关闭"
           className="codex-plus-close"
           style={CLOSE_BUTTON}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => togglePanel(false)}
         >
           ✕

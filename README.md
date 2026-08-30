@@ -49,6 +49,8 @@ One local command binds your **current dsh conversation 1:1 to one durable Codex
 
 Codex's execution progress is forwarded into the dsh session stream in near real time: reasoning summaries, agent-message deltas, tool calls, and status events. By default these are **log-only** — they do not enter the dsh model context (saves tokens, keeps the model focused).
 
+**Turn numbering continues across restarts**: the session log is durable, so the event forwarder reads the highest `turn` ordinal already recorded and keeps incrementing from there (instead of restarting at 1). This keeps the dsh front-end conversation assembler from crashing on a duplicate `turn/start` and hiding the whole conversation.
+
 ### 4. Official slots for status + floating panel for control (R2/B3)
 
 - **Status** uses official dsh slots: `conversation.session.header` direct-connect badge, `conversation.composer.dock` status bar, `conversation.input.dock` live queue list.
@@ -122,3 +124,10 @@ The session header shows a direct-connect badge, the composer dock shows gateway
 - **Authentication stays native** — the plugin provides the CLI but does not log in, trust projects, or rewrite Codex settings.
 - **Vision descriptions need the `dsh-ocgw` plugin** — when it is not installed, images pass through undescribed (Codex then relies on its own model's vision ability).
 - **Byte-level streaming render (A1-b)** is deferred: intermediate events are injected in event-block granularity, near real time, not per-byte.
+
+## Repairing existing sessions
+
+Older builds restarted turn numbering from 1 on every boot, so a durable log could end up with **duplicate turn ordinals**. The dsh front end then fails to load the conversation (`conversation Context N:deliverables1 received more than one start Match`) and the chat appears blank. Two layers of fix:
+
+- **Code fix**: `src/gateway/events.ts` — `GatewayEventForwarder` picks up from the maximum turn ordinal already in the session log at construction time, so new writes never repeat.
+- **Existing data**: run `node scripts/renumber-sessions.mjs` (scans `~/.dsh/sessions` by default; `--dry-run` reports without writing, `--sessions-dir` overrides the root). It rewrites each session frame-by-frame in dsh's multi-frame zstd format, treating every `turn/start` as a new turn instance and reassigning monotonic ordinals; the original file is kept as `session.jsonl.zstd.bak-<timestamp>`.

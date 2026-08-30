@@ -49,6 +49,8 @@ kind: "package-bundle"
 
 Codex 的执行过程以近实时方式转发进 dsh 会话流：推理摘要、agent 消息增量、工具调用、状态事件。默认**仅作日志**——不进 dsh 模型上下文（省 token，不干扰模型）。
 
+**跨重启 turn 编号延续**：会话日志是持久化的，事件转发器每次启动会先读取会话里已记录的最大 `turn` 编号再继续递增（而不是从 1 重新编号），保证 dsh 前端对话装配器不会因为重复的 `turn/start` 而崩溃、隐藏整个对话。
+
 ### 4. 状态用官方槽位 + 控制用悬浮窗（R2/B3）
 
 - **状态显示**用官方槽位：`conversation.session.header` 直连徽标、`conversation.composer.dock` 状态条、`conversation.input.dock` 实时排队列表。
@@ -122,3 +124,10 @@ profile 的 `package.json` 会写入 `"dsh-subagent-codex-plus": "link:<本仓�
 - **鉴权保持原生**——插件提供 CLI 但不负责登录、信任项目或改写 Codex 设置。
 - **视觉描述依赖 `dsh-ocgw` 插件**——未安装时图片仅透传（由 Codex 自身模型视觉能力决定能否看图）。
 - **字节级流式渲染（A1-b）**暂缓：中间事件按事件块粒度注入，近实时，非逐字节。
+
+## 历史会话修复
+
+旧版本（turn 编号每次重启从 1 重新开始）产生的**重复 turn 编号**会让 dsh 前端加载会话历史时崩溃（控制台报 `conversation Context N:deliverables1 received more than one start Match`），表现为对话界面空白、看不到输入输出。修复分两层：
+
+- **代码修复**：`src/gateway/events.ts` 的 `GatewayEventForwarder` 构造时从会话日志续接最大 turn 编号，新写入不再重复。
+- **存量数据修复**：运行 `node scripts/renumber-sessions.mjs`（默认扫描 `~/.dsh/sessions`，`--dry-run` 只报告不改动，`--sessions-dir` 可指定目录），它会按 DSH 的 zstd 多帧格式逐帧重写，把每个 `turn/start` 当作新 turn 实例重新分配单调编号，并保留原文件备份（`session.jsonl.zstd.bak-<时间戳>`）。

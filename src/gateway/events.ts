@@ -110,9 +110,25 @@ export class GatewayEventForwarder {
     // `Session.append` is a class method that reads instance state; keep the
     // reference bound so the projection never throws on a detached `this`.
     this.appendBound = session.append.bind(session) as (type: string, data: unknown, opts?: unknown) => unknown
+    // Continue turn numbering across process restarts: the session log is
+    // durable, so a fresh forwarder must pick up after the last recorded turn
+    // instead of renumbering from 1. Duplicate turn ordinals corrupt the
+    // Harness front-end conversation assembler (it rejects a second `start`
+    // match for the same context) and hide the whole conversation.
+    this.turn = GatewayEventForwarder.recordedTurnCount(session)
   }
 
   private readonly appendBound: (type: string, data: unknown, opts?: unknown) => unknown
+
+  /** Highest turn ordinal already present in the durable event log (0 when empty). */
+  private static recordedTurnCount(session: Session): number {
+    let max = 0
+    for (const event of session.events) {
+      const turn = (event.data as { turn?: unknown }).turn
+      if (typeof turn === 'number' && Number.isSafeInteger(turn) && turn > max) max = turn
+    }
+    return max
+  }
 
   forward(notification: CodexGatewayNotification): void {
     if (!this.options.enabled) return
@@ -169,11 +185,14 @@ export class GatewayEventForwarder {
     if (this.activeTurnId === undefined) return
     const turn = asRecord(params.turn)
     this.closeStep()
+    // Settle the durable reply BEFORE closing the turn: the Harness surface
+    // folds an `assistant/message` into the turn it belongs to, and a message
+    // arriving after `turn/end` renders as an orphan (metadata only, no body).
+    this.appendFinalMessage(turn?.status)
     this.append('turn/end', {
       turn: this.turn,
       reason: turnEndReason(turn?.status, turn?.error),
     })
-    this.appendFinalMessage(turn?.status)
     this.activeTurnId = undefined
     this.resetAccumulators()
   }
