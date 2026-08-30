@@ -261,3 +261,23 @@ node --experimental-transform-types docs/verification/oneshot-smoke.ts
 # 持久化产物
 ls ~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-*.jsonl
 ```
+
+## R5 图片处理真机实测（2026-08-30，RPC 直调 127.0.0.1:3080）
+
+**测试2：网关路径（DSH → Codex）✅ 完整闭环**
+- 恢复绑定会话 `session-3fbf00b3…`（cwd=ocgo-gateway，auto-reattach 自动恢复 thread `01a04d34…`，phase=ready）。
+- RPC `session.prompt`（mode=queue，content 含 320×240 红方块+蓝方块 PNG）→ `accepted:true`。
+- 链路证据（Codex rollout 尾部）：
+  1. 网关把图片物化为 `dsh-codex-plus-img-UI94AJ/img-1-sha256:ff4ad.png`（localImage）透传；
+  2. Codex 上游 `deepseek-v4-flash`（无视觉）先自行 PIL 分析像素，随后 `cat ~/.codex/skills/ocgw-vision/SKILL.md`；
+  3. 运行 `~/.codex/skills/ocgw-vision/scripts/ocgw-vision.sh describe "<图片路径>"` → GLM-5.3-flash 输出结构化中文描述；
+  4. Codex 综合回复"白色背景上左上方红色长方形、右下方蓝色正方形"——**描述正确**。
+- 结论：**TeamAI skill `ocgw-vision` 在网关路径真实生效**；纯文本上游也能"看图"。
+
+**测试1：DSH 主对话路径 ❌ 图片进不了模型（两个独立障碍）**
+- 模型 `deepseek-v4-flash`：`session.prompt` 被图片门禁直接拒绝——`MODEL_DOES_NOT_SUPPORT_IMAGES`（模型收不到图，skill 无从触发）。
+- 模型 `glm-5.3-flash`：图片门禁通过（accepted），但 `dsh-llm-deepseek` 转换图片时报
+  `UNSUPPORTED_CONTENT: DeepSeek image conversion requires the durable attachment service`
+  （`resolveAttachments` 未注入，dsh-llm-deepseek lib `streamWithConnection` 1398 行）。
+- 结论：DSH 主对话路径当前**无法处理图片**（skill 方案救不了——模型根本看不到图）；需修 `dsh-llm-deepseek` 的
+  attachments 注入或升级 DSH 核心。网关路径不受影响（图片不经 dsh-llm-deepseek 转换）。
