@@ -9,6 +9,19 @@ English | [中文](README.zh.md)
 
 **This plugin is forked from the official `@deepseek-ai/dsh-subagent-codex` plugin**. It keeps the official one-shot Codex delegation exactly as upstream ships it, and layers a set of extensions on top so that **Codex becomes a first-class citizen inside DeepSeek Harness (dsh)**: continuous conversation, live intermediate output, and a true-gateway mode where dsh only relays bytes between you and a Codex session — no model runs in between.
 
+## Relationship with dsh-subagent-pi
+
+[`dsh-subagent-pi`](https://github.com/february2015/dsh-subagent-pi) is the **sibling plugin** of this one: both are personal forks of the official `@deepseek-ai/dsh-subagent-codex` that add the same true-gateway layer on top — direct connection, queued/steered continuous conversation, live intermediate output, durable binding, and image passthrough. They differ only in the direct-connected agent — **Codex** here, **Pi** in `dsh-subagent-pi` — and share the same architecture, so features, commands, and docs map one-to-one:
+
+| | `dsh-subagent-codex-plus` (this plugin) | `dsh-subagent-pi` |
+|---|---|---|
+| Direct-connected agent | Codex | Pi |
+| Lock command | `/codex-lock` | `/pi-lock` |
+| Unlock command | `/codex-unlock` | `/pi-unlock` |
+| Header badge | `CDX-xxxx` | `PI-xxxx` |
+
+Both projects live under the same GitHub account and are maintained in parallel. Pick either — or install both; each binds its own sessions and they coexist without interference.
+
 ## Features
 
 ### 1. True-gateway direct connection (core)
