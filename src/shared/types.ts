@@ -71,6 +71,14 @@ export interface GatewayQueueDeleteRequest extends GatewaySessionRequest {
   readonly id: string
 }
 
+/** Request body of `POST /api/codex-plus/queue/update`. */
+export interface GatewayQueueUpdateRequest extends GatewaySessionRequest {
+  /** Queue submission id whose input text is replaced. */
+  readonly id: string
+  /** New text for the queued submission. */
+  readonly text: string
+}
+
 /** Request body of `POST /api/codex-plus/queue/reorder`. */
 export interface GatewayQueueReorderRequest extends GatewaySessionRequest {
   /** New FIFO order of queue submission ids. */

@@ -17,6 +17,7 @@ export interface GatewayApi {
   attach(sessionId: string, threadId?: string): Promise<GatewayActionResponse>
   detach(sessionId: string): Promise<GatewayActionResponse>
   queueDelete(sessionId: string, id: string): Promise<GatewayActionResponse>
+  queueUpdate(sessionId: string, id: string, text: string): Promise<GatewayActionResponse>
   queueReorder(sessionId: string, ids: readonly string[]): Promise<GatewayActionResponse>
   steer(sessionId: string, text: string): Promise<GatewayActionResponse>
   cancel(sessionId: string): Promise<GatewayActionResponse>
@@ -53,6 +54,7 @@ export function makeGatewayApi(): GatewayApi {
     attach: (sessionId, threadId) => postJson(`${BASE}/attach`, { sessionId, ...threadId === undefined ? {} : { threadId } }),
     detach: (sessionId) => postJson(`${BASE}/detach`, { sessionId }),
     queueDelete: (sessionId, id) => postJson(`${BASE}/queue/delete`, { sessionId, id }),
+    queueUpdate: (sessionId, id, text) => postJson(`${BASE}/queue/update`, { sessionId, id, text }),
     queueReorder: (sessionId, ids) => postJson(`${BASE}/queue/reorder`, { sessionId, ids }),
     steer: (sessionId, text) => postJson(`${BASE}/steer`, { sessionId, text }),
     cancel: (sessionId) => postJson(`${BASE}/cancel`, { sessionId }),

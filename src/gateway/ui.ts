@@ -27,6 +27,7 @@ import type {
   GatewaySessionView,
   GatewayStateResponse,
   GatewaySteerRequest,
+  GatewayQueueUpdateRequest,
 } from '../shared/types.ts'
 import type { GatewayManager } from './manager.ts'
 import { textOf } from './ui-text.ts'
@@ -141,6 +142,7 @@ export class GatewayUiService {
       postRoute(`${GATEWAY_UI_PREFIX}/attach`, (body) => this.handleAttach(body)),
       postRoute(`${GATEWAY_UI_PREFIX}/detach`, (body) => this.handleDetach(body)),
       postRoute(`${GATEWAY_UI_PREFIX}/queue/delete`, (body) => this.handleQueueDelete(body)),
+      postRoute(`${GATEWAY_UI_PREFIX}/queue/update`, (body) => this.handleQueueUpdate(body)),
       postRoute(`${GATEWAY_UI_PREFIX}/queue/reorder`, (body) => this.handleQueueReorder(body)),
       postRoute(`${GATEWAY_UI_PREFIX}/steer`, (body) => this.handleSteer(body)),
       postRoute(`${GATEWAY_UI_PREFIX}/cancel`, (body) => this.handleCancel(body)),
@@ -226,6 +228,30 @@ export class GatewayUiService {
     }
     try {
       await attached.gateway.requeue(ids as readonly string[])
+      return { ok: true, session: await this.view(sessionId) }
+    } catch (error: unknown) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  private async handleQueueUpdate(body: Record<string, unknown>): Promise<GatewayActionResponse> {
+    const { id, text } = body as unknown as GatewayQueueUpdateRequest
+    const sessionId = sessionIdOf(body.sessionId)
+    if (sessionId === undefined) {
+      return { ok: false, error: 'missing sessionId' }
+    }
+    if (typeof id !== 'string' || id.length === 0) {
+      return { ok: false, error: 'missing queue id' }
+    }
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return { ok: false, error: 'queue text is empty' }
+    }
+    const attached = this.manager.get(sessionId)
+    if (attached === undefined) {
+      return { ok: false, error: 'gateway: session is not attached to Codex' }
+    }
+    try {
+      await attached.gateway.updateQueue(id, text.trim())
       return { ok: true, session: await this.view(sessionId) }
     } catch (error: unknown) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }

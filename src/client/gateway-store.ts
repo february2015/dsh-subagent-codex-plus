@@ -27,8 +27,6 @@ const entries = new Map<string, GatewayViewEntry>()
 const listeners = new Set<() => void>()
 const timers = new Map<string, ReturnType<typeof setInterval>>()
 const refcounts = new Map<string, number>()
-/** Last seen queue length per session, used to detect 0 -> n transitions. */
-const lastQueueCount = new Map<string, number>()
 
 function emit(): void {
   for (const listener of listeners) listener()
@@ -44,20 +42,7 @@ function poll(sessionId: string): void {
   if (current === undefined) return
   current.state(sessionId).then(
     (response) => {
-      const view = response.session
-      setEntry(sessionId, { view, loading: false })
-      // A new message just entered the Codex queue: surface the floating
-      // control window so the user can reorder/cancel/steer it right away.
-      const queued = view?.attached === true ? view.queue.length : 0
-      if (queued > 0) {
-        const previous = lastQueueCount.get(sessionId) ?? 0
-        if (lastQueueCount.has(sessionId) && previous === 0) {
-          togglePanel(true)
-        }
-        lastQueueCount.set(sessionId, queued)
-      } else {
-        lastQueueCount.set(sessionId, 0)
-      }
+      setEntry(sessionId, { view: response.session, loading: false })
     },
     (error: unknown) => {
       setEntry(sessionId, {

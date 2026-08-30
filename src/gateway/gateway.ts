@@ -222,6 +222,15 @@ export class CodexGateway extends EventEmitter {
     await this.wireAsReady().queueReorder(this.requireThread(), queuedSubmissionIds)
   }
 
+  /** Replace the input text of one queued submission. */
+  async updateQueue(queuedSubmissionId: string, text: string): Promise<void> {
+    await this.wireAsReady().queueUpdate(this.requireThread(), queuedSubmissionId, [{
+      type: 'text',
+      text,
+      text_elements: [],
+    }])
+  }
+
   /**
    * Close the wire and terminate the child process tree. Idempotent; safe to
    * call from any phase.

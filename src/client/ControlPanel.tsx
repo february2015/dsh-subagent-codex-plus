@@ -1,10 +1,9 @@
 /**
- * Floating control window for the Codex true-gateway, seated in the
- * official `shell.overlay` layer (root-scoped, click-through unless the
- * entry opts into pointer events). Controls live here per the user's
- * decision: attach/detach (gateway switch), queue cancel/reorder, steer
- * insertion, and turn interruption. The window tracks the currently
- * selected session through the framework `useSessions` feed.
+ * Floating info window for the Codex true-gateway, seated in the official
+ * `shell.overlay` layer. Opened from the session-header badge, this window is
+ * deliberately informational only: direct-connect state, durable thread /
+ * session ids, detach, and interrupt. Queue management (reorder / insert /
+ * delete / edit) lives in the queue window above the composer instead.
  *
  * @module dsh-subagent-codex-plus/client/control-panel
  */
@@ -21,7 +20,7 @@ import {
 } from './gateway-store.ts'
 import type { GatewaySessionView } from '../shared/types.ts'
 
-const PANEL_WIDTH = 320
+const PANEL_WIDTH = 340
 
 const PANEL_STYLE = {
   position: 'fixed',
@@ -56,43 +55,39 @@ const BUTTON = {
   alignItems: 'center',
   justifyContent: 'center',
   gap: 4,
-  height: 26,
-  padding: '0 10px',
+  height: 28,
+  padding: '0 12px',
   borderRadius: 6,
   border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
   background: 'var(--dsw-alias-fill-weak, rgba(128,128,128,0.08))',
   color: 'inherit',
   fontSize: 12,
   cursor: 'pointer',
-}
-
-const PRIMARY_BUTTON = {
-  ...BUTTON,
-  borderColor: 'var(--dsw-alias-accent, #3b82f6)',
-  background: 'var(--dsw-alias-accent, #3b82f6)',
-  color: '#fff',
-}
+} as const
 
 const DANGER_BUTTON = {
   ...BUTTON,
   borderColor: 'var(--dsw-alias-danger, #d64545)',
   color: 'var(--dsw-alias-danger, #d64545)',
-}
+} as const
 
-const INPUT = {
-  boxSizing: 'border-box' as const,
-  width: '100%',
+const CLOSE_BUTTON = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 26,
   height: 26,
-  padding: '0 8px',
   borderRadius: 6,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
-  background: 'var(--dsw-alias-surface-raised, #fff)',
+  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.35))',
+  background: 'var(--dsw-alias-fill-weak, rgba(128,128,128,0.1))',
   color: 'inherit',
-  fontSize: 12,
-}
+  fontSize: 15,
+  lineHeight: 1,
+  cursor: 'pointer',
+} as const
 
-function shortThread(threadId: string): string {
-  return threadId.length > 16 ? `${threadId.slice(0, 14)}…` : threadId
+function shortId(id: string): string {
+  return id.length > 20 ? `${id.slice(0, 18)}…` : id
 }
 
 function statusBadge(view: GatewaySessionView | null): string {
@@ -100,13 +95,12 @@ function statusBadge(view: GatewaySessionView | null): string {
   return '未直连'
 }
 
-/** Floating gateway control window (shell.overlay entry). */
+/** Floating gateway info window (shell.overlay entry, opened from the badge). */
 export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
   const panel = usePanelState()
   const sessionId: string | undefined = props.useSessions((state) => state.current)
   const { view, loading, error: pollError } = useGatewayView(sessionId)
   const [attachThread, setAttachThread] = useState('')
-  const [steerText, setSteerText] = useState('')
   const [actionError, setActionError] = useState<string | undefined>(undefined)
   const drag = useRef<{ dx: number; dy: number } | null>(null)
 
@@ -139,20 +133,10 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
 
   if (!panel.open) return null
 
-  const queue = view?.attached === true ? view.queue : []
-
-  const reorder = async (index: number, direction: -1 | 1): Promise<void> => {
-    const target = index + direction
-    if (target < 0 || target >= queue.length) return
-    const ids = queue.map((item) => item.id)
-    ;[ids[index], ids[target]] = [ids[target]!, ids[index]!]
-    await run((api) => api.queueReorder(sessionId!, ids))
-  }
-
   return (
     <div
       role="dialog"
-      aria-label="Codex 直连网关控制"
+      aria-label="Codex 直连网关"
       style={{ ...PANEL_STYLE, left: panel.x, top: panel.y }}
     >
       <div
@@ -176,7 +160,8 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
         <button
           type="button"
           aria-label="关闭"
-          style={{ ...BUTTON, height: 22, padding: '0 8px' }}
+          title="关闭"
+          style={CLOSE_BUTTON}
           onClick={() => togglePanel(false)}
         >
           ✕
@@ -188,31 +173,48 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
       ) : (
         <>
           <div style={SECTION}>
-            <div style={SECTION_TITLE}>网关开关</div>
+            <div style={SECTION_TITLE}>直连开关</div>
             {view?.attached === true ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ color: 'var(--dsw-alias-label-secondary, #555)' }}>
-                  已直连线程 <code style={{ fontSize: 11 }}>{shortThread(view.threadId ?? '')}</code>
-                </span>
-                <button
-                  type="button"
-                  style={DANGER_BUTTON}
-                  onClick={() => { void run((api) => api.detach(sessionId)) }}
-                >
-                  断开直连
-                </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ color: 'var(--dsw-alias-label-secondary, #555)', fontSize: 12, lineHeight: '18px' }}>
+                  已直连线程 <code style={{ fontSize: 11 }}>{shortId(view.threadId ?? '')}</code>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    style={DANGER_BUTTON}
+                    onClick={() => { void run((api) => api.detach(sessionId)) }}
+                  >
+                    断开直连
+                  </button>
+                </div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <input
-                  style={INPUT}
+                  style={{
+                    boxSizing: 'border-box',
+                    width: '100%',
+                    height: 28,
+                    padding: '0 8px',
+                    borderRadius: 6,
+                    border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
+                    background: 'var(--dsw-alias-surface-raised, #fff)',
+                    color: 'inherit',
+                    fontSize: 12,
+                  }}
                   placeholder="恢复已有线程 id（留空 = 新建）"
                   value={attachThread}
                   onChange={(event) => setAttachThread(event.currentTarget.value)}
                 />
                 <button
                   type="button"
-                  style={PRIMARY_BUTTON}
+                  style={{
+                    ...BUTTON,
+                    borderColor: 'var(--dsw-alias-accent, #3b82f6)',
+                    background: 'var(--dsw-alias-accent, #3b82f6)',
+                    color: '#fff',
+                  }}
                   onClick={() => {
                     void run((api) => api.attach(sessionId, attachThread.trim() === '' ? undefined : attachThread.trim()))
                   }}
@@ -221,7 +223,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
                 </button>
                 {view?.threadId !== undefined && (
                   <div style={{ color: 'var(--dsw-alias-label-tertiary, #888)', fontSize: 11 }}>
-                    已保存线程 <code>{shortThread(view.threadId)}</code>，重启后自动恢复
+                    已保存线程 <code>{shortId(view.threadId)}</code>，重启后自动恢复
                   </div>
                 )}
               </div>
@@ -229,97 +231,13 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
           </div>
 
           <div style={SECTION}>
-            <div style={SECTION_TITLE}>状态</div>
+            <div style={SECTION_TITLE}>信息</div>
             <div style={{ color: 'var(--dsw-alias-label-secondary, #555)', fontSize: 12, lineHeight: '20px' }}>
-              会话 <code style={{ fontSize: 11 }}>{shortThread(sessionId)}</code>
+              会话 <code style={{ fontSize: 11 }}>{shortId(sessionId)}</code>
               {loading && ' · 载入中'}
             </div>
             <div style={{ color: 'var(--dsw-alias-label-secondary, #555)', fontSize: 12, lineHeight: '20px' }}>
-              状态：{statusBadge(view)} · 队列 {queue.length}
-            </div>
-            {view?.attached === true && view.running && (
-              <button
-                type="button"
-                style={DANGER_BUTTON}
-                onClick={() => { void run((api) => api.cancel(sessionId)) }}
-              >
-                中断当前
-              </button>
-            )}
-          </div>
-
-          {queue.length > 0 && (
-            <div style={SECTION}>
-              <div style={SECTION_TITLE}>排队列表</div>
-              {queue.map((item, index) => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
-                  <span
-                    style={{
-                      flex: '1 1 auto',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      fontSize: 12,
-                    }}
-                    title={item.text}
-                  >
-                    {index + 1}. {item.text}
-                  </span>
-                  <button
-                    type="button"
-                    style={{ ...BUTTON, height: 20, padding: '0 6px' }}
-                    aria-label="上移"
-                    disabled={index === 0}
-                    onClick={() => { void reorder(index, -1) }}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...BUTTON, height: 20, padding: '0 6px' }}
-                    aria-label="下移"
-                    disabled={index === queue.length - 1}
-                    onClick={() => { void reorder(index, 1) }}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...DANGER_BUTTON, height: 20, padding: '0 6px' }}
-                    aria-label="取消该条"
-                    onClick={() => { void run((api) => api.queueDelete(sessionId, item.id)) }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={SECTION}>
-            <div style={SECTION_TITLE}>直接插入（steer）</div>
-            <textarea
-              rows={3}
-              style={{ ...INPUT, height: 'auto', padding: '6px 8px', resize: 'vertical', lineHeight: '18px' }}
-              placeholder="插入一条消息，直接改变当前 Codex 回合的方向（不等队列）"
-              value={steerText}
-              onChange={(event) => setSteerText(event.currentTarget.value)}
-            />
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <button
-                type="button"
-                style={PRIMARY_BUTTON}
-                disabled={steerText.trim() === '' || view?.attached !== true}
-                onClick={() => {
-                  const text = steerText.trim()
-                  if (text === '') return
-                  void run((api) => api.steer(sessionId, text)).then((ok) => {
-                    if (ok) setSteerText('')
-                  })
-                }}
-              >
-                插入
-              </button>
+              状态：{statusBadge(view)}{view?.attached === true ? ` · 队列 ${view.queue.length}` : ''}
             </div>
           </div>
 

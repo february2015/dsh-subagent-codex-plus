@@ -14,8 +14,9 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { makeGatewayApi } from './api.ts'
-import { DockStatus, HeaderAction, QueueDock } from './components.tsx'
+import { DockStatus, HeaderAction } from './components.tsx'
 import { ControlPanel } from './ControlPanel.tsx'
+import { QueuePanel } from './QueuePanel.tsx'
 import { setGatewayApi } from './gateway-store.ts'
 
 /** Required services: the slot registry. */
@@ -43,15 +44,15 @@ export function apply(ctx: ClientContext): void {
     order: 200,
   }, DockStatus))
 
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-    name: 'conversation.input.dock',
-    id: ENTRY_ID,
-    order: 200,
-  }, QueueDock))
-
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: ENTRY_ID,
     order: 500,
   }, ControlPanel))
+
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: `${ENTRY_ID}-queue`,
+    order: 400,
+  }, QueuePanel))
 }
