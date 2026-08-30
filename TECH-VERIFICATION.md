@@ -274,10 +274,12 @@ ls ~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-*.jsonl
   4. Codex 综合回复"白色背景上左上方红色长方形、右下方蓝色正方形"——**描述正确**。
 - 结论：**TeamAI skill `ocgw-vision` 在网关路径真实生效**；纯文本上游也能"看图"。
 
-**测试1：DSH 主对话路径 ❌ 图片进不了模型（两个独立障碍）**
-- 模型 `deepseek-v4-flash`：`session.prompt` 被图片门禁直接拒绝——`MODEL_DOES_NOT_SUPPORT_IMAGES`（模型收不到图，skill 无从触发）。
-- 模型 `glm-5.3-flash`：图片门禁通过（accepted），但 `dsh-llm-deepseek` 转换图片时报
+**测试1：DSH 主对话路径 —— 已于 2026-08-30 修复（dsh-ocgw），GLM 5.3 发图全通 ✅**
+- 原障碍：模型 `glm-5.3-flash` 图片门禁通过（accepted），但 `dsh-llm-deepseek` 转换图片时报
   `UNSUPPORTED_CONTENT: DeepSeek image conversion requires the durable attachment service`
-  （`resolveAttachments` 未注入，dsh-llm-deepseek lib `streamWithConnection` 1398 行）。
-- 结论：DSH 主对话路径当前**无法处理图片**（skill 方案救不了——模型根本看不到图）；需修 `dsh-llm-deepseek` 的
-  attachments 注入或升级 DSH 核心。网关路径不受影响（图片不经 dsh-llm-deepseek 转换）。
+  （根因：`dsh-ocgw` 构造 `DeepSeekAdapter` 时未注入 `resolveAttachments`）。
+- 修复：`ocgo-gateway` 仓库 `extensions/dsh-ocgw/src/provider.ts` 补 `resolveAttachments: () => ctx.get("attachments")`
+  （commit `e468075`），重建插件 + 重启 dsh web 后，GLM 5.3 主对话发 320×240 红蓝方块 PNG，
+  模型正确识别描述。详见 `ocgo-gateway/extensions/dsh-ocgw/docs/IMAGE-PIPELINE.md`。
+- 遗留：`deepseek-v4-flash`（纯文本）主对话发图仍被图片门禁拒绝（`MODEL_DOES_NOT_SUPPORT_IMAGES`），
+  第二步按 Skill 方案处理（图片以文件路径文本进入上下文 → ocgw-vision 调 GLM）。
