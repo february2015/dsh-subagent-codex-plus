@@ -86,8 +86,15 @@ const ICON_BUTTON = {
   flex: '0 0 auto',
 } as const
 
-const DANGER_ICON = {
+const TEXT_BUTTON = {
   ...ICON_BUTTON,
+  width: 'auto',
+  padding: '0 8px',
+  fontSize: 11,
+} as const
+
+const DANGER_TEXT = {
+  ...TEXT_BUTTON,
   borderColor: THEME.danger,
   color: THEME.danger,
 } as const
@@ -227,39 +234,39 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
                 <button
                   type="button"
                   className="codex-plus-btn"
-                  style={ICON_BUTTON}
+                  style={TEXT_BUTTON}
                   title="置顶"
                   disabled={index === 0}
                   onClick={() => { void promote(index) }}
                 >
-                  ↑
+                  置顶
                 </button>
                 <button
                   type="button"
                   className="codex-plus-btn"
-                  style={ICON_BUTTON}
+                  style={TEXT_BUTTON}
                   title="直接插入当前回合"
                   onClick={() => { void insertNow(item) }}
                 >
-                  ⤵
+                  插入
                 </button>
                 <button
                   type="button"
                   className="codex-plus-btn"
-                  style={ICON_BUTTON}
+                  style={TEXT_BUTTON}
                   title="编辑"
                   onClick={() => { setEditingId(item.id); setEditText(item.text) }}
                 >
-                  ✎
+                  编辑
                 </button>
                 <button
                   type="button"
                   className="codex-plus-btn-danger"
-                  style={DANGER_ICON}
+                  style={DANGER_TEXT}
                   title="删除"
                   onClick={() => { void run((api) => api.queueDelete(sessionId!, item.id)) }}
                 >
-                  ✕
+                  删除
                 </button>
               </>
             )}

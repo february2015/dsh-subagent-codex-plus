@@ -195,10 +195,22 @@ export class GatewayAgent implements Agent {
   private dispatch(kind: 'followup' | 'steer', message: UserMessage): void {
     const injected = this.pendingInject
     this.pendingInject = []
-    // Buffer the prompt until the Codex turn actually starts, mirroring the
-    // loop agent's claim→user/message path; the durable record then shows the
-    // prompt inside its own turn instead of leaving it in the inbox queue.
-    this.pendingUserMessages.push(message)
+    if (kind === 'steer' && this.gateway.turnState === 'running') {
+      // `turn/steer` redirects the ACTIVE turn without a new `turn/started`
+      // notification, so a prompt buffered for release on turn start would
+      // never flush and the inserted message would never reach the chat.
+      // Land it on the surface immediately; it belongs to the running turn.
+      try {
+        this.session.append('user/message', message, { surfaceOp: 'append' })
+      } catch (error: unknown) {
+        this.report(error)
+      }
+    } else {
+      // Buffer the prompt until the Codex turn actually starts, mirroring the
+      // loop agent's claim→user/message path; the durable record then shows the
+      // prompt inside its own turn instead of leaving it in the inbox queue.
+      this.pendingUserMessages.push(message)
+    }
     void this.resolveAndRoute(kind, message, injected).catch((error: unknown) => {
       // The submission never reached the wire: drop the buffered prompt so it
       // cannot attach to a later, unrelated turn.

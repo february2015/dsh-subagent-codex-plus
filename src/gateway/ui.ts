@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {
   GatewayActionResponse,
   GatewayAttachRequest,
@@ -272,11 +273,14 @@ export class GatewayUiService {
       return { ok: false, error: 'gateway: session is not attached to Codex' }
     }
     try {
-      await attached.gateway.steer([{
-        type: 'text',
-        text,
-        text_elements: [],
-      }])
+      // Route through the GatewayAgent so the inserted prompt lands on the
+      // session surface as a durable `user/message`; steering the raw gateway
+      // would redirect Codex without recording the prompt, so the insert never
+      // shows up in the chat.
+      attached.agent.steer(createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      }))
       return { ok: true, session: await this.view(sessionId) }
     } catch (error: unknown) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
