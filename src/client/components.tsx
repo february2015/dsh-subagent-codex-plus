@@ -47,12 +47,12 @@ function dotColor(view: GatewaySessionView | null): string {
 
 function badgeLabel(view: GatewaySessionView | null): string {
   if (view?.attached) {
-    return `● Codex · ${shortThread(view.threadId ?? '')}${view.running ? ' · 运行中' : ''}`
+    return `cdx-${(view.threadId ?? '').slice(0, 4)}`
   }
   if (view?.threadId !== undefined) {
-    return `○ Codex · ${shortThread(view.threadId)}（已保存）`
+    return `cdx-${view.threadId.slice(0, 4)}`
   }
-  return '⚡ 直连 Codex'
+  return '直连 cdx'
 }
 
 /** Session-header action: the direct-connect badge (status display). */
