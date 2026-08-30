@@ -189,9 +189,26 @@ export function QueueDock(props: PropsRuntime<'conversation.input.dock'>) {
           </span>
         </div>
       ))}
-      <div style={{ color: 'var(--dsw-alias-label-tertiary, #888)', fontSize: 11, lineHeight: '18px' }}>
-        排队中：新消息在 Codex 忙时自动入队；可在悬浮控制窗取消/改序/插入。
-      </div>
+      <button
+        type="button"
+        onClick={() => togglePanel(true)}
+        style={{
+          display: 'block',
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          color: 'var(--dsw-alias-label-tertiary, #888)',
+          fontSize: 11,
+          lineHeight: '18px',
+          cursor: 'pointer',
+          textAlign: 'left',
+          textDecoration: 'underline',
+          textUnderlineOffset: 2,
+        }}
+        title="打开控制窗查看/改序/取消排队消息"
+      >
+        排队中：新消息在 Codex 忙时自动入队；点击打开悬浮控制窗取消/改序/插入。
+      </button>
     </div>
   )
 }

@@ -27,6 +27,8 @@ const entries = new Map<string, GatewayViewEntry>()
 const listeners = new Set<() => void>()
 const timers = new Map<string, ReturnType<typeof setInterval>>()
 const refcounts = new Map<string, number>()
+/** Last seen queue length per session, used to detect 0 -> n transitions. */
+const lastQueueCount = new Map<string, number>()
 
 function emit(): void {
   for (const listener of listeners) listener()
@@ -42,7 +44,20 @@ function poll(sessionId: string): void {
   if (current === undefined) return
   current.state(sessionId).then(
     (response) => {
-      setEntry(sessionId, { view: response.session, loading: false })
+      const view = response.session
+      setEntry(sessionId, { view, loading: false })
+      // A new message just entered the Codex queue: surface the floating
+      // control window so the user can reorder/cancel/steer it right away.
+      const queued = view?.attached === true ? view.queue.length : 0
+      if (queued > 0) {
+        const previous = lastQueueCount.get(sessionId) ?? 0
+        if (lastQueueCount.has(sessionId) && previous === 0) {
+          togglePanel(true)
+        }
+        lastQueueCount.set(sessionId, queued)
+      } else {
+        lastQueueCount.set(sessionId, 0)
+      }
     },
     (error: unknown) => {
       setEntry(sessionId, {
@@ -129,9 +144,29 @@ export interface PanelState {
   readonly open: boolean
   readonly x: number
   readonly y: number
+  /** Whether the user has dragged the window; default anchors to chat top. */
+  readonly userMoved: boolean
 }
 
 const PANEL_KEY = 'dsh-codex-plus-panel'
+const PANEL_WIDTH = 320
+
+/** Default anchor: top-right of the chat column when no user position yet. */
+function chatAnchor(): { x: number; y: number } {
+  try {
+    const column = document.querySelector('[class$="_centerCol"]') as HTMLElement | null
+    if (column !== null) {
+      const rect = column.getBoundingClientRect()
+      return {
+        x: Math.max(8, Math.round(rect.right - PANEL_WIDTH - 16)),
+        y: Math.max(8, Math.round(rect.top + 8)),
+      }
+    }
+  } catch {
+    // Fall through to the plain default.
+  }
+  return { x: 24, y: 16 }
+}
 
 function loadPanel(): PanelState {
   try {
@@ -139,13 +174,13 @@ function loadPanel(): PanelState {
     if (raw !== null) {
       const parsed = JSON.parse(raw) as Partial<PanelState>
       if (typeof parsed.open === 'boolean' && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-        return { open: parsed.open, x: parsed.x, y: parsed.y }
+        return { open: parsed.open, x: parsed.x, y: parsed.y, userMoved: parsed.userMoved === true }
       }
     }
   } catch {
     // Unreadable storage: fall back to defaults.
   }
-  return { open: false, x: 24, y: 120 }
+  return { open: false, x: 24, y: 16, userMoved: false }
 }
 
 let panel = loadPanel()
@@ -162,13 +197,28 @@ function emitPanel(): void {
 
 /** Toggle the floating control window. */
 export function togglePanel(open?: boolean): void {
-  panel = { ...panel, open: open ?? !panel.open }
+  const next = open ?? !panel.open
+  if (next && !panel.open) {
+    // Clamp back into the viewport: a stale persisted position can leave the
+    // window off-screen where its controls are unreachable.
+    const maxX = Math.max(0, window.innerWidth - PANEL_WIDTH)
+    const maxY = Math.max(0, window.innerHeight - 120)
+    const base = panel.userMoved ? panel : chatAnchor()
+    panel = {
+      x: Math.min(Math.max(base.x, 0), maxX),
+      y: Math.min(Math.max(base.y, 0), maxY),
+      userMoved: panel.userMoved,
+      open: next,
+    }
+  } else {
+    panel = { ...panel, open: next }
+  }
   emitPanel()
 }
 
 /** Move the floating control window (drag). */
 export function movePanel(x: number, y: number): void {
-  panel = { ...panel, x, y }
+  panel = { ...panel, x, y, userMoved: true }
   emitPanel()
 }
 
