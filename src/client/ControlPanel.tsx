@@ -19,6 +19,7 @@ import {
   usePanelState,
 } from './gateway-store.ts'
 import type { GatewaySessionView } from '../shared/types.ts'
+import { PANEL_HOVER_CSS, THEME } from './theme.ts'
 
 const PANEL_WIDTH = 340
 
@@ -29,10 +30,10 @@ const PANEL_STYLE = {
   boxSizing: 'border-box' as const,
   pointerEvents: 'auto' as const,
   borderRadius: 10,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
-  background: 'var(--dsw-alias-surface-raised, #ffffff)',
-  color: 'var(--dsw-alias-label-primary, #222)',
-  boxShadow: '0 8px 28px rgba(0,0,0,0.18)',
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.surface,
+  color: THEME.textPrimary,
+  boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
   fontFamily: 'var(--dsh-font-sans, -apple-system, "PingFang SC", sans-serif)',
   fontSize: 13,
   overflow: 'hidden',
@@ -40,15 +41,15 @@ const PANEL_STYLE = {
 
 const SECTION = {
   padding: '10px 12px',
-  borderTop: '1px solid var(--dsw-alias-stroke-subtle, rgba(128,128,128,0.15))',
-}
+  borderTop: `1px solid ${THEME.borderSubtle}`,
+} as const
 
 const SECTION_TITLE = {
-  color: 'var(--dsw-alias-label-secondary, #555)',
+  color: THEME.textSecondary,
   fontSize: 11,
   fontWeight: 600,
   marginBottom: 6,
-}
+} as const
 
 const BUTTON = {
   display: 'inline-flex',
@@ -58,17 +59,17 @@ const BUTTON = {
   height: 28,
   padding: '0 12px',
   borderRadius: 6,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
-  background: 'var(--dsw-alias-fill-weak, rgba(128,128,128,0.08))',
-  color: 'inherit',
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.buttonBg,
+  color: THEME.textPrimary,
   fontSize: 12,
   cursor: 'pointer',
 } as const
 
 const DANGER_BUTTON = {
   ...BUTTON,
-  borderColor: 'var(--dsw-alias-danger, #d64545)',
-  color: 'var(--dsw-alias-danger, #d64545)',
+  borderColor: THEME.danger,
+  color: THEME.danger,
 } as const
 
 const CLOSE_BUTTON = {
@@ -78,12 +79,24 @@ const CLOSE_BUTTON = {
   width: 26,
   height: 26,
   borderRadius: 6,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.35))',
-  background: 'var(--dsw-alias-fill-weak, rgba(128,128,128,0.1))',
-  color: 'inherit',
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.buttonBg,
+  color: THEME.textPrimary,
   fontSize: 15,
   lineHeight: 1,
   cursor: 'pointer',
+} as const
+
+const INPUT = {
+  boxSizing: 'border-box' as const,
+  width: '100%',
+  height: 28,
+  padding: '0 8px',
+  borderRadius: 6,
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.surfaceInput,
+  color: THEME.textPrimary,
+  fontSize: 12,
 } as const
 
 function shortId(id: string): string {
@@ -139,6 +152,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
       aria-label="Codex 直连网关"
       style={{ ...PANEL_STYLE, left: panel.x, top: panel.y }}
     >
+      <style>{PANEL_HOVER_CSS}</style>
       <div
         style={{
           display: 'flex',
@@ -147,7 +161,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
           padding: '8px 12px',
           cursor: 'grab',
           userSelect: 'none',
-          borderBottom: '1px solid var(--dsw-alias-stroke-subtle, rgba(128,128,128,0.15))',
+          borderBottom: `1px solid ${THEME.borderSubtle}`,
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -161,6 +175,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
           type="button"
           aria-label="关闭"
           title="关闭"
+          className="codex-plus-close"
           style={CLOSE_BUTTON}
           onClick={() => togglePanel(false)}
         >
@@ -176,12 +191,13 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
             <div style={SECTION_TITLE}>直连开关</div>
             {view?.attached === true ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ color: 'var(--dsw-alias-label-secondary, #555)', fontSize: 12, lineHeight: '18px' }}>
+                <div style={{ color: THEME.textSecondary, fontSize: 12, lineHeight: '18px' }}>
                   已直连线程 <code style={{ fontSize: 11 }}>{shortId(view.threadId ?? '')}</code>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     type="button"
+                    className="codex-plus-btn-danger"
                     style={DANGER_BUTTON}
                     onClick={() => { void run((api) => api.detach(sessionId)) }}
                   >
@@ -192,27 +208,18 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <input
-                  style={{
-                    boxSizing: 'border-box',
-                    width: '100%',
-                    height: 28,
-                    padding: '0 8px',
-                    borderRadius: 6,
-                    border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
-                    background: 'var(--dsw-alias-surface-raised, #fff)',
-                    color: 'inherit',
-                    fontSize: 12,
-                  }}
+                  style={INPUT}
                   placeholder="恢复已有线程 id（留空 = 新建）"
                   value={attachThread}
                   onChange={(event) => setAttachThread(event.currentTarget.value)}
                 />
                 <button
                   type="button"
+                  className="codex-plus-btn"
                   style={{
                     ...BUTTON,
-                    borderColor: 'var(--dsw-alias-accent, #3b82f6)',
-                    background: 'var(--dsw-alias-accent, #3b82f6)',
+                    borderColor: THEME.accent,
+                    background: THEME.accent,
                     color: '#fff',
                   }}
                   onClick={() => {
@@ -222,7 +229,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
                   {view?.threadId !== undefined ? '重新直连（已保存线程）' : '直连 Codex'}
                 </button>
                 {view?.threadId !== undefined && (
-                  <div style={{ color: 'var(--dsw-alias-label-tertiary, #888)', fontSize: 11 }}>
+                  <div style={{ color: THEME.textTertiary, fontSize: 11 }}>
                     已保存线程 <code>{shortId(view.threadId)}</code>，重启后自动恢复
                   </div>
                 )}
@@ -232,17 +239,17 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
 
           <div style={SECTION}>
             <div style={SECTION_TITLE}>信息</div>
-            <div style={{ color: 'var(--dsw-alias-label-secondary, #555)', fontSize: 12, lineHeight: '20px' }}>
+            <div style={{ color: THEME.textSecondary, fontSize: 12, lineHeight: '20px' }}>
               会话 <code style={{ fontSize: 11 }}>{shortId(sessionId)}</code>
               {loading && ' · 载入中'}
             </div>
-            <div style={{ color: 'var(--dsw-alias-label-secondary, #555)', fontSize: 12, lineHeight: '20px' }}>
+            <div style={{ color: THEME.textSecondary, fontSize: 12, lineHeight: '20px' }}>
               状态：{statusBadge(view)}{view?.attached === true ? ` · 队列 ${view.queue.length}` : ''}
             </div>
           </div>
 
           {(actionError ?? pollError) !== undefined && (
-            <div style={{ ...SECTION, color: 'var(--dsw-alias-danger, #d64545)', fontSize: 11 }}>
+            <div style={{ ...SECTION, color: THEME.danger, fontSize: 11 }}>
               {actionError ?? pollError}
             </div>
           )}

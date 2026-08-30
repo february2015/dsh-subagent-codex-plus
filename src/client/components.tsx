@@ -16,6 +16,7 @@ import {
   usePanelState,
 } from './gateway-store.ts'
 import type { GatewaySessionView } from '../shared/types.ts'
+import { THEME } from './theme.ts'
 
 /** Short stable thread label for badges. */
 function shortThread(threadId: string): string {
@@ -29,9 +30,9 @@ const BADGE_BASE = {
   height: 24,
   padding: '0 8px',
   borderRadius: 6,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.35))',
+  border: `1px solid ${THEME.borderStrong}`,
   background: 'transparent',
-  color: 'var(--dsw-alias-label-primary, #333)',
+  color: THEME.textPrimary,
   fontSize: 12,
   lineHeight: '24px',
   whiteSpace: 'nowrap' as const,
@@ -64,8 +65,8 @@ export function HeaderAction(props: PropsRuntime<'conversation.session.header.ac
       style={{
         ...BADGE_BASE,
         color: view?.attached
-          ? 'var(--dsw-alias-label-primary, #333)'
-          : 'var(--dsw-alias-label-tertiary, #888)',
+          ? THEME.textPrimary
+          : THEME.textTertiary,
         boxShadow: view?.attached ? 'inset 0 0 0 1px ' + dotColor(view) : undefined,
       }}
       title={view?.threadId !== undefined
@@ -90,7 +91,7 @@ export function HeaderAction(props: PropsRuntime<'conversation.session.header.ac
 
 const STATUS_LINE = {
   boxSizing: 'border-box' as const,
-  color: 'var(--dsw-alias-label-tertiary, #888)',
+  color: THEME.textTertiary,
   fontSize: 12,
   fontVariantNumeric: 'tabular-nums',
   lineHeight: '20px',

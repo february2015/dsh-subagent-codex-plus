@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { runGatewayAction, useGatewayView } from './gateway-store.ts'
+import { PANEL_HOVER_CSS, THEME } from './theme.ts'
 
 /** Locate the chat composer textarea to anchor the window above it. */
 function chatInputRect(): { left: number; width: number; top: number } | null {
@@ -31,10 +32,10 @@ const PANEL_STYLE = {
   boxSizing: 'border-box' as const,
   pointerEvents: 'auto' as const,
   borderRadius: 10,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
-  background: 'var(--dsw-alias-surface-raised, #ffffff)',
-  color: 'var(--dsw-alias-label-primary, #222)',
-  boxShadow: '0 8px 28px rgba(0,0,0,0.18)',
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.surface,
+  color: THEME.textPrimary,
+  boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
   fontFamily: 'var(--dsh-font-sans, -apple-system, "PingFang SC", sans-serif)',
   fontSize: 12,
   overflow: 'hidden',
@@ -45,8 +46,8 @@ const HEADER = {
   alignItems: 'center',
   gap: 8,
   padding: '8px 12px',
-  borderBottom: '1px solid var(--dsw-alias-stroke-subtle, rgba(128,128,128,0.15))',
-  color: 'var(--dsw-alias-label-secondary, #555)',
+  borderBottom: `1px solid ${THEME.borderSubtle}`,
+  color: THEME.textSecondary,
   fontSize: 11,
   fontWeight: 600,
 } as const
@@ -56,7 +57,7 @@ const ROW = {
   alignItems: 'center',
   gap: 6,
   padding: '6px 12px',
-  borderTop: '1px solid var(--dsw-alias-stroke-subtle, rgba(128,128,128,0.12))',
+  borderTop: `1px solid ${THEME.borderSubtle}`,
 } as const
 
 const TEXT = {
@@ -76,9 +77,9 @@ const ICON_BUTTON = {
   width: 24,
   height: 22,
   borderRadius: 5,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.3))',
-  background: 'var(--dsw-alias-fill-weak, rgba(128,128,128,0.08))',
-  color: 'inherit',
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.buttonBg,
+  color: THEME.textPrimary,
   fontSize: 11,
   lineHeight: 1,
   cursor: 'pointer',
@@ -87,8 +88,8 @@ const ICON_BUTTON = {
 
 const DANGER_ICON = {
   ...ICON_BUTTON,
-  borderColor: 'var(--dsw-alias-danger, #d64545)',
-  color: 'var(--dsw-alias-danger, #d64545)',
+  borderColor: THEME.danger,
+  color: THEME.danger,
 } as const
 
 const FOOTER = {
@@ -96,7 +97,7 @@ const FOOTER = {
   alignItems: 'center',
   gap: 8,
   padding: '6px 12px',
-  borderTop: '1px solid var(--dsw-alias-stroke-subtle, rgba(128,128,128,0.15))',
+  borderTop: `1px solid ${THEME.borderSubtle}`,
 } as const
 
 const EDIT_INPUT = {
@@ -106,9 +107,9 @@ const EDIT_INPUT = {
   height: 24,
   padding: '0 6px',
   borderRadius: 5,
-  border: '1px solid var(--dsw-alias-stroke-strong, rgba(128,128,128,0.4))',
-  background: 'var(--dsw-alias-surface-raised, #fff)',
-  color: 'inherit',
+  border: `1px solid ${THEME.borderStrong}`,
+  background: THEME.surfaceInput,
+  color: THEME.textPrimary,
   fontSize: 12,
 }
 
@@ -184,6 +185,7 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
         maxHeight,
       }}
     >
+      <style>{PANEL_HOVER_CSS}</style>
       <div style={HEADER}>
         <span aria-hidden>⏳</span>
         <span>排队消息（{queue.length}）</span>
@@ -197,7 +199,7 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
               style={{
                 flex: '0 0 auto',
                 width: 18,
-                color: 'var(--dsw-alias-label-tertiary, #888)',
+                color: THEME.textTertiary,
                 fontSize: 11,
                 textAlign: 'center',
               }}
@@ -216,14 +218,15 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
                   }}
                   autoFocus
                 />
-                <button type="button" style={ICON_BUTTON} title="保存" onClick={() => { void saveEdit(item) }}>✓</button>
-                <button type="button" style={ICON_BUTTON} title="取消" onClick={() => { setEditingId(null); setEditText('') }}>✕</button>
+                <button type="button" className="codex-plus-btn" style={ICON_BUTTON} title="保存" onClick={() => { void saveEdit(item) }}>✓</button>
+                <button type="button" className="codex-plus-btn" style={ICON_BUTTON} title="取消" onClick={() => { setEditingId(null); setEditText('') }}>✕</button>
               </>
             ) : (
               <>
                 <span style={TEXT} title={item.text}>{item.text}</span>
                 <button
                   type="button"
+                  className="codex-plus-btn"
                   style={ICON_BUTTON}
                   title="置顶"
                   disabled={index === 0}
@@ -233,6 +236,7 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
                 </button>
                 <button
                   type="button"
+                  className="codex-plus-btn"
                   style={ICON_BUTTON}
                   title="直接插入当前回合"
                   onClick={() => { void insertNow(item) }}
@@ -241,6 +245,7 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
                 </button>
                 <button
                   type="button"
+                  className="codex-plus-btn"
                   style={ICON_BUTTON}
                   title="编辑"
                   onClick={() => { setEditingId(item.id); setEditText(item.text) }}
@@ -249,6 +254,7 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
                 </button>
                 <button
                   type="button"
+                  className="codex-plus-btn-danger"
                   style={DANGER_ICON}
                   title="删除"
                   onClick={() => { void run((api) => api.queueDelete(sessionId!, item.id)) }}
@@ -264,12 +270,13 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
         <div style={FOOTER}>
           <button
             type="button"
+            className="codex-plus-btn-danger"
             style={{
               ...ICON_BUTTON,
               width: 'auto',
               padding: '0 10px',
-              borderColor: 'var(--dsw-alias-danger, #d64545)',
-              color: 'var(--dsw-alias-danger, #d64545)',
+              borderColor: THEME.danger,
+              color: THEME.danger,
             }}
             title="中断当前 Codex 回合"
             onClick={() => { void run((api) => api.cancel(sessionId!)) }}
@@ -277,13 +284,13 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
             中断当前
           </button>
           <span style={{ flex: 1 }} />
-          <span style={{ color: 'var(--dsw-alias-label-tertiary, #888)', fontSize: 11 }}>
+          <span style={{ color: THEME.textTertiary, fontSize: 11 }}>
             排队消息在 Codex 忙时自动入队
           </span>
         </div>
       )}
       {actionError !== undefined && (
-        <div style={{ padding: '6px 12px', color: 'var(--dsw-alias-danger, #d64545)', fontSize: 11, borderTop: '1px solid var(--dsw-alias-stroke-subtle, rgba(128,128,128,0.15))' }}>
+        <div style={{ padding: '6px 12px', color: THEME.danger, fontSize: 11, borderTop: `1px solid ${THEME.borderSubtle}` }}>
           {actionError}
         </div>
       )}
