@@ -79,26 +79,33 @@
   选择/控制类用悬浮窗口（队列操作、网关开关）。
 - 新增（Q3=B 定稿）：**图片/附件透传**——网关模式 v1 即支持把 dsh 输入框的图片/附件原样转给 Codex。
 
-## R4 视觉兜底路由（Vision Bridge，2026-08-29 用户新增定稿）
+## R4 视觉兜底路由（Vision Bridge，2026-08-29 新增定稿；**2026-08-30 架构归属定稿：归 OCGW 体系**）
 
 **需求**：主模型（Codex 内 / DSH 内）不支持视觉时，遇到图片一律交给视觉模型 `glm-5.3-flash` 处理（理解/描述/OCR），
 结果作为文本继续走原流程。该策略**不止在 Codex 里生效，在 DSH 里同样生效**。
 
-**已实测（2026-08-29）**
-- 渠道：ocgo 网关 `https://ocgo.zlxy.sd.cn/v1`（OpenAI 兼容 chat/completions），`Authorization: Bearer ocgo_...`（同 `~/.codex/config.toml` 的 `model_providers.ocgw`）。
-- 模型清单含：`glm-5.3-flash`、`glm-5.1`、`deepseek-v4-flash/pro`、`kimi-k2.6`、`qwen3.6-plus`。
-- 视觉实测：`image_url` 传 base64 data URL（PNG），prompt "What color is this image?" → 正确回答 `Maroon`。
+**架构归属（2026-08-30 用户定稿）**
+- **视觉兜底不属 dsh-subagent-codex-plus**，而是 **OCGW Gateway 体系**的能力：由 `ocgo-gateway/extensions/dsh-ocgw` 插件提供，
+  注册 cordis service **`ocgw-vision`**（`describe(bytes, mediaType) → 文本描述`，走本地 ocgo 网关 + gateway-key 鉴权，模型默认 `glm-5.3-flash`）。
+- `dsh-subagent-codex-plus` 只做**消费者**：`ctx.get('ocgw-vision', false)` 惰性获取（跨插件须 `strict=false`，cordis fiber 非 ACTIVE 陷阱），
+  服务缺失或描述失败时**优雅降级为纯透传**（图片原样交给 Codex）。
+- 同体系其它宿主（pi-ocgw 等）未来可复用同一能力；网关本体转发管线**不做**图片改写。
+
+**已实测（2026-08-29 / 2026-08-30）**
+- 渠道：ocgo 网关 `/v1`（OpenAI 兼容 chat/completions），gateway-key 鉴权；模型清单含 `glm-5.3-flash`（视觉）。
+- 视觉实测：`image_url` 传 base64 data URL（PNG）→ `glm-5.3-flash` 结构化描述成功。
+- 端到端（2026-08-30）：dsh 传 64×64 纯红 PNG → `ocgw-vision` 描述"纯红色长条"注入 → Codex 答复"红色。"（rollout 00:53 轮次，含 `[图片描述 · glm-5.3-flash]`）。
 
 **已定决策**
-- V1：图片输入统一走 Vision Bridge 预处理：检测输入含 `image/localImage` → 调 `glm-5.3-flash` 生成结构化描述 → 文本注入原消息，
+- V1：图片输入统一走视觉兜底预处理：检测输入含 `image/localImage` → 经 `ocgw-vision` 调 `glm-5.3-flash` 生成结构化描述 → 文本注入原消息，
   再交给 Codex（`turn/start`/queue 的 text 输入）或 DSH 主对话（不依赖模型本身视觉能力）。
 - V2（备选，不阻塞）：Codex 侧也可用 per-turn `model` 覆盖（`TurnStartParams.model` 已验证）直接指定视觉模型跑那一轮，
   保留给"看图执行型"任务（如读截图改代码）选用；V1 为默认，节省 token 且对无视觉模型最通用。
 - 适用层级：
-  - **我们的插件内（委派式 + 网关式输入预处理管线）**：完全可控，直接实现 V1。
+  - **网关式（dsh-subagent-codex-plus）**：消费 `ocgw-vision` 服务（v1 已实现，真机验证通过）。
   - **DSH 主对话（非网关路径）**：dsh 核心模型路由不在插件控制内；实现方式二选一——
-    (a) 用户在 dsh 侧把主模型配置为视觉模型；(b) 若 dsh 提供附件/输入预处理钩子则同样走 GLM 兜底（**待验证**，列入技术验证清单）。
-- 状态显示：Vision Bridge 命中时，在 `conversation.composer.dock` 状态条显示"图片已转 glm-5.3-flash 理解"，可追溯。
+    (a) 用户在 dsh 侧把主模型配置为视觉模型；(b) 若 dsh 提供附件/输入预处理钩子则同样走 `ocgw-vision` 兜底（**待验证**，列入技术验证清单）。
+- 状态显示：视觉兜底命中时，在 `conversation.composer.dock` 状态条显示"图片已转 glm-5.3-flash 理解"，可追溯。
 
 ## 已确认决策（Q1-Q5，2026-08-29 定稿）
 

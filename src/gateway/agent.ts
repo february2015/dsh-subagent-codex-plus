@@ -39,7 +39,7 @@ import {
   type GatewayEventForwarderOptions,
 } from './events.ts'
 import type { GatewayImageResolver } from './images.ts'
-import type { VisionBridge } from './vision.ts'
+import type { VisionDescriber } from './images.ts'
 import type { GatewayTextInput, GatewayUserInput } from './wire.ts'
 
 /** Live dsh association supplied by the host when the agent is registered. */
@@ -57,8 +57,8 @@ export interface GatewayAgentOptions {
   readonly eventForwarder?: GatewayEventForwarderOptions
   /** Resolves dsh image blocks to Codex `localImage` inputs (Q3). */
   readonly imageResolver?: GatewayImageResolver
-  /** Optional vision bridge; when set, images are described as text (R4). */
-  readonly vision?: VisionBridge
+  /** Optional vision describer (OCGW `ocgw-vision`); when set, images are described as text (R4). */
+  readonly vision?: VisionDescriber
 }
 
 /**
@@ -69,7 +69,7 @@ export async function resolveInputs(
   message: UserMessage,
   injected: readonly string[],
   resolver: GatewayImageResolver | undefined,
-  vision: VisionBridge | undefined,
+  vision: VisionDescriber | undefined,
 ): Promise<GatewayUserInput[]> {
   const inputs: GatewayUserInput[] = [
     ...injected.map((text): GatewayTextInput => ({ type: 'text', text, text_elements: [] })),

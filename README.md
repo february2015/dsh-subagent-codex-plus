@@ -58,9 +58,9 @@ Codex's execution progress is forwarded into the dsh session stream in near real
 
 Composer attachments pass through as Codex `localImage` inputs (local path / base64), so you can paste screenshots and have Codex act on them.
 
-### 6. Vision bridge fallback (R4)
+### 6. Vision bridge fallback (R4) — owned by the OCGW gateway system
 
-When the acting model has no vision support, any image is sent to `glm-5.3-flash` (via the ocgo gateway, OpenAI-compatible) which produces a structured description; that text is injected alongside the image. The strategy applies **both inside Codex and inside the dsh main conversation** — image handling no longer depends on the target model's own vision ability. On the dsh side, the session model must support image input (e.g. pick `GLM-5.3 Flash (OCGo)` in the model picker); the bundled `dsh-llm-deepseek` is upgraded to `0.1.1-rc.2`, which preserves `inputModalities` natively.
+Image understanding belongs to the **OCGW gateway system**, not to this plugin. The `dsh-ocgw` plugin registers a `ocgw-vision` service (`describe(bytes, mediaType)` → structured Chinese description via `glm-5.3-flash` through the local ocgo gateway); this package is only a **consumer**: when it receives an image it asks `ocgw-vision` and injects the description as text alongside the image. If the service is absent or fails, the image still passes through, just undescribed. The strategy applies **both inside Codex and inside the dsh main conversation** — image handling no longer depends on the target model's own vision ability. On the dsh side, the session model must still declare image support (e.g. pick `GLM-5.3 Flash (OCGo)` in the model picker) for the dsh image gate; `dsh-llm-deepseek` is at `0.1.1-rc.2` which preserves `inputModalities` natively.
 
 ### 7. Delegation and gateway coexist (Q5)
 
@@ -109,10 +109,7 @@ The session header shows a direct-connect badge, the composer dock shows gateway
 | `gatewayApprovalPolicy` | — | Approval policy for gateway turns (native Codex modes) |
 | `gatewayEventForwarding` | `true` | Forward Codex intermediate events into the dsh session stream |
 | `gatewayAppendFinalMessage` | — | Append the final answer into the dsh session as a normal message |
-| `gatewayVisionEnabled` | `true` | Enable the GLM vision bridge for images |
-| `gatewayVisionEndpoint` | ocgo gateway | `https://ocgo.zlxy.sd.cn/v1` |
-| `gatewayVisionApiKey` | — | Key for the vision endpoint (same `ocgo_…` as `~/.codex/config.toml`) |
-| `gatewayVisionModel` | `glm-5.3-flash` | Vision model for image descriptions |
+| `gatewayVisionEnabled` | `true` | Enable image descriptions; the capability is consumed from the `dsh-ocgw` plugin's `ocgw-vision` service |
 
 ## Documentation
 
@@ -124,5 +121,5 @@ The session header shows a direct-connect badge, the composer dock shows gateway
 
 - **One-shot delegation** still creates a fresh process/thread per run (official behavior); the gateway path is the persistent-conversation alternative.
 - **Authentication stays native** — the plugin provides the CLI but does not log in, trust projects, or rewrite Codex settings.
-- **Vision bridge needs the ocgo gateway** — the default endpoint/key are personal; point `gatewayVisionEndpoint`/`gatewayVisionApiKey` at your own gateway if you do not use ocgo.
+- **Vision descriptions need the `dsh-ocgw` plugin** — when it is not installed, images pass through undescribed (Codex then relies on its own model's vision ability).
 - **Byte-level streaming render (A1-b)** is deferred: intermediate events are injected in event-block granularity, near real time, not per-byte.

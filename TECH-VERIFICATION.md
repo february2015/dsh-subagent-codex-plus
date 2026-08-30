@@ -188,6 +188,19 @@ app-server 会推送全量中间事件（消息中间件层）：
 - 注意：并发运行多个 app-server 会争用 `~/.codex` 状态库（`state db discrepancy` 刷屏、turn 挂起），探针需串行执行。
 - 与网关并存（Q5）：同一包内 `CodexProvider`（one-shot）与 `GatewayManager`（网关）可同时注册，互不干扰。
 
+### 3.11 视觉兜底迁移 OCGW 体系 + 真机闭环（3.6，2026-08-30）
+
+- **架构定稿**：R4 视觉兜底归属 OCGW 体系，由 `ocgo-gateway/extensions/dsh-ocgw` 提供 cordis service `ocgw-vision`
+  （`describe(bytes, mediaType)` → 中文结构化描述，走本地 ocgo 网关 `/v1/chat/completions` + gateway-key 鉴权，模型默认 `glm-5.3-flash`）；
+  `dsh-subagent-codex-plus` 删除自带 `VisionBridge` 与 `gatewayVisionEndpoint/ApiKey/Model` 配置，改为消费者。
+- **cordis 跨插件陷阱（关键教训）**：`ctx.get('ocgw-vision')` 默认 `strict=true`，只返回**当前 active fiber** 提供的服务；
+  跨插件获取必须传 `strict=false`（`ctx.get('ocgw-vision', false)`，与既有 `ocgw-notify` 用法一致），否则恒为 `undefined` → 图片无描述。
+- **惰性消费**：`installGateway` 不再一次性取值，改为每次描述时 `ctx.get('ocgw-vision', false)`；服务缺失或 describe 失败 → `warn` + 图片纯透传（不阻断）。
+- **真机端到端（3080，00:53 轮次）**：RPC `session.prompt` 带 64×64 纯红 PNG（base64 `EncodedImageAttachment`）→ 网关挂载（auto-reattach，`attached:true, phase:ready`）
+  → `GatewayImageResolver` 物化 `dsh-codex-plus-img-*/img-*.png` → `ocgw-vision` 描述 **"纯红色的横向长条…被均匀的亮红色填满"** 注入 `[图片描述 · glm-5.3-flash]`
+  → Codex 答复 **"红色。"**（rollout `01a04d34…jsonl`，`userMessage` 含 `input_image` + 描述文本）。
+- 复验要点：`ocgw-vision` 独立闭环（node 直调 `createOcgwVisionService` → 红色 PNG → 描述成功）；两个包 `typecheck`+`build` 全绿；dsh web 重启后链路可用。
+
 ## 4. UI 槽位与悬浮窗验证
 
 

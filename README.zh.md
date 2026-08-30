@@ -58,9 +58,9 @@ Codex 的执行过程以近实时方式转发进 dsh 会话流：推理摘要、
 
 composer 附件透传为 Codex `localImage` 输入（本地路径/base64），可以直接贴截图让 Codex 看图干活。
 
-### 6. 视觉兜底 Vision Bridge（R4）
+### 6. 视觉兜底（R4）——归属 OCGW 体系
 
-当执行模型不支持视觉时，图片统一交给 `glm-5.3-flash`（经 ocgo 网关，OpenAI 兼容）生成结构化描述，描述文本随图片一起注入。该策略**在 Codex 内与 dsh 主对话内同样生效**——看图不再依赖目标模型自身的视觉能力。dsh 侧要求会话模型支持图片输入（如模型选择器里选 `GLM-5.3 Flash (OCGo)`）；随附的 `dsh-llm-deepseek` 已升级到 `0.1.1-rc.2`，`inputModalities` 原生保留。
+图片理解能力**属于 OCGW Gateway 体系**，不属于本插件。`dsh-ocgw` 插件注册 `ocgw-vision` 服务（`describe(bytes, mediaType)` → 经本地 ocgo 网关用 `glm-5.3-flash` 生成结构化中文描述）；本插件只是**消费者**：收到图片时调用 `ocgw-vision` 并把描述作为文本随图注入。服务缺失或失败时图片仍原样透传（仅无描述）。该策略**在 Codex 内与 dsh 主对话内同样生效**——看图不再依赖目标模型自身的视觉能力。dsh 侧仍要求会话模型声明支持图片输入（如模型选择器里选 `GLM-5.3 Flash (OCGo)`）以通过 dsh 图片门禁；`dsh-llm-deepseek` 为 `0.1.1-rc.2`，`inputModalities` 原生保留。
 
 ### 7. 委派式与网关式并存（Q5）
 
@@ -109,10 +109,7 @@ profile 的 `package.json` 会写入 `"dsh-subagent-codex-plus": "link:<本仓�
 | `gatewayApprovalPolicy` | — | 网关轮次的审批策略（Codex 原生模式） |
 | `gatewayEventForwarding` | `true` | 把 Codex 中间事件转发进 dsh 会话流 |
 | `gatewayAppendFinalMessage` | — | 把最终答复作为普通消息追加进 dsh 会话 |
-| `gatewayVisionEnabled` | `true` | 开启 GLM 视觉兜底 |
-| `gatewayVisionEndpoint` | ocgo 网关 | `https://ocgo.zlxy.sd.cn/v1` |
-| `gatewayVisionApiKey` | — | 视觉端点密钥（与 `~/.codex/config.toml` 中的 `ocgo_…` 相同） |
-| `gatewayVisionModel` | `glm-5.3-flash` | 图片描述用视觉模型 |
+| `gatewayVisionEnabled` | `true` | 开启图片描述；能力消费自 `dsh-ocgw` 插件的 `ocgw-vision` 服务 |
 
 ## 文档
 
@@ -124,5 +121,5 @@ profile 的 `package.json` 会写入 `"dsh-subagent-codex-plus": "link:<本仓�
 
 - **one-shot 委派**仍是每次运行新建进程/线程（官方行为）；持续对话请走网关路径。
 - **鉴权保持原生**——插件提供 CLI 但不负责登录、信任项目或改写 Codex 设置。
-- **视觉兜底依赖 ocgo 网关**——默认端点/密钥为个人配置；不用 ocgo 时请把 `gatewayVisionEndpoint`/`gatewayVisionApiKey` 指向自己的网关。
+- **视觉描述依赖 `dsh-ocgw` 插件**——未安装时图片仅透传（由 Codex 自身模型视觉能力决定能否看图）。
 - **字节级流式渲染（A1-b）**暂缓：中间事件按事件块粒度注入，近实时，非逐字节。

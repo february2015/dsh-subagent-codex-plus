@@ -25,8 +25,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { GatewayAgent } from './agent.ts'
 import type { GatewayEventForwarderOptions } from './events.ts'
 import { CodexGateway, type CodexGatewayOptions } from './gateway.ts'
-import { GatewayImageResolver } from './images.ts'
-import type { VisionBridge } from './vision.ts'
+
+import { GatewayImageResolver, type VisionDescriber } from './images.ts'
 
 /** A live session↔Codex attachment. */
 export interface AttachedGateway {
@@ -57,8 +57,8 @@ export interface AttachGatewayOptions {
   readonly agentOptions?: AgentOptions
   /** Codex → dsh session event forwarding policy (R1-A1/A2). */
   readonly eventForwarder?: GatewayEventForwarderOptions
-  /** Optional GLM vision bridge; when set, images are described as text (R4). */
-  readonly vision?: VisionBridge
+  /** Optional vision describer (OCGW `ocgw-vision`); when set, images are described as text (R4). */
+  readonly vision?: VisionDescriber
 }
 
 /** Narrow structural view of the registries' private stores. */

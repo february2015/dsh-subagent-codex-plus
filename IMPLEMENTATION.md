@@ -34,3 +34,4 @@
 - [x] 3.3 文档同步（README/REQUIREMENTS/TECH-VERIFICATION）+ 发布包内容核对
 - [x] 3.4 依赖升级与真机闭环复验：`extensions/dsh-ocgw` 升 `@deepseek-ai/*@0.1.1-rc.2`（`dsh-llm-deepseek` 原生 `inputModalities`，删除 vendor 补丁）；3080 单实例下 图片门禁→GLM 视觉桥→Codex 看图 真机回归通过；修复双实例并发写坏会话日志（截断重编码）
 - [x] 3.5 自动重连抗锁竞争：`GatewayManager.installAutoReattach` 对 `already has an active writer` 类 resume 失败增加指数退避重试（1s→16s，至多 5 次），重启后无需人工干预恢复直连
+- [x] 3.6 视觉兜底迁移到 OCGW 体系（R4 架构定稿 2026-08-30）：删除插件内 `VisionBridge`/`gatewayVision*` 配置；能力归 `dsh-ocgw`（`ocgw-vision` 服务，cordis `ctx.provide`），本插件经 `ctx.get('ocgw-vision', false)` 惰性消费（strict=false 跨 fiber），服务缺失/失败优雅降级纯透传；真机验证：纯红 PNG → `ocgw-vision` 描述注入 → Codex 答复"红色。"
