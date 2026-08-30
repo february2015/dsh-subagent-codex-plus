@@ -53,7 +53,7 @@ Codex 的执行过程以近实时方式转发进 dsh 会话流：推理摘要、
 
 ### 4. 状态用官方槽位 + 控制用悬浮窗（R2/B3）
 
-- **状态显示**用官方槽位：`conversation.session.header` 直连徽标、`conversation.composer.dock` 状态条、`conversation.input.dock` 实时排队列表。
+- **状态显示**用官方槽位：`conversation.session.header` 直连徽标（`CDX-xxxx`）、`conversation.composer.dock` 状态条、`conversation.input.dock` 实时排队列表。徽标**仅在会话存在绑定后显示**（未绑定不占标题栏空间）。
 - **选择/控制**放在悬浮窗（dsh-pet 模式，`shell.overlay`）：队列操作、steer/插入、网关开关。
 
 ### 5. 图片/附件透传（Q3）
@@ -88,7 +88,7 @@ profile 的 `package.json` 会写入 `"dsh-subagent-codex-plus": "link:<本仓�
 /codex-unlock    # 解除绑定；Codex 线程保留，可稍后重新 attach
 ```
 
-会话头部出现直连徽标，composer 下方显示网关状态条，头部按钮可打开悬浮窗查看队列与 steer 控制。
+绑定成功后会话头部出现 `CDX-xxxx` 直连徽标（未绑定的会话不显示），composer 下方显示网关状态条，头部按钮可打开悬浮窗查看队列与 steer 控制。
 
 ### 委派（官方基线，用法不变）
 

@@ -53,7 +53,7 @@ Codex's execution progress is forwarded into the dsh session stream in near real
 
 ### 4. Official slots for status + floating panel for control (R2/B3)
 
-- **Status** uses official dsh slots: `conversation.session.header` direct-connect badge, `conversation.composer.dock` status bar, `conversation.input.dock` live queue list.
+- **Status** uses official dsh slots: `conversation.session.header` direct-connect badge (`CDX-xxxx`), `conversation.composer.dock` status bar, `conversation.input.dock` live queue list. The badge is rendered **only once the session has a binding** (unbound sessions take no header space).
 - **Control** lives in a floating overlay panel (dsh-pet pattern, `shell.overlay`): queue operations, steer/insert, gateway on/off.
 
 ### 5. Image / attachment passthrough (Q3)
@@ -88,7 +88,7 @@ The profile's `package.json` gets `"dsh-subagent-codex-plus": "link:<this repo>"
 /codex-unlock    # unbind; the Codex thread is kept for later re-attach
 ```
 
-The session header shows a direct-connect badge, the composer dock shows gateway status, and the floating panel (open from the header button) shows the queue and steer controls.
+Once bound, the session header shows a `CDX-xxxx` direct-connect badge (unbound sessions show no badge), the composer dock shows gateway status, and the floating panel (open from the header button) shows the queue and steer controls.
 
 ### Delegation (official baseline, unchanged)
 
