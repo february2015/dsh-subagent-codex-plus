@@ -47,12 +47,12 @@ function dotColor(view: GatewaySessionView | null): string {
 
 function badgeLabel(view: GatewaySessionView | null): string {
   if (view?.attached) {
-    return `cdx-${(view.threadId ?? '').slice(0, 4)}`
+    return `CDX-${(view.threadId ?? '').slice(0, 4)}`
   }
   if (view?.threadId !== undefined) {
-    return `cdx-${view.threadId.slice(0, 4)}`
+    return `CDX-${view.threadId.slice(0, 4)}`
   }
-  return '直连 cdx'
+  return '直连 CDX'
 }
 
 /** Session-header action: the direct-connect badge (status display). */
