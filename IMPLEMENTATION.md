@@ -17,7 +17,7 @@
 - [x] 1.2 消息原语：submit 自动分流（空闲→`turn/start`，忙→`thread/queue/add`）、`turn/steer`、interrupt/cancel、队列 list/update/delete/reorder —— 冒烟全过
 - [x] 1.3 `GatewayAgent` 契约：实现 dsh `Agent` 接口（send/followup/steer/inject/cancel/whenIdle），内部转发 CodexGateway —— 冒烟全过（含修复 turn/completed 未发 `turn` 事件的 bug）
 - [x] 1.4 绑定持久化：dsh sessionId ↔ Codex threadId 1:1 本地 JSON + 重启恢复（C3）
-- [x] 1.5 `/codex-attach`、`/codex-detach` 命令 + Q4 重复绑定拒绝 + 解除后恢复普通模式（Q1）
+- [x] 1.5 `/codex-lock`、`/codex-unlock` 命令 + Q4 重复绑定拒绝 + 解除后恢复普通模式（Q1）
 - [x] 1.6 事件透出（R1-A1）：Codex 中间事件 → dsh 会话流（assistant/chunk、tool/call、状态），默认不进模型上下文（A2）
 
 ## 阶段 2：界面与视觉

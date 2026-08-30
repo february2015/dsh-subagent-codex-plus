@@ -68,12 +68,12 @@ async function bootPlugin(ctx, cwd) {
   pass('plugin apply: one-shot provider registered', provider.name)
   const commands = ctx.get('commands')
   if (commands === undefined) throw new Error('commands service missing')
-  const attach = commands.find(undefined, 'codex-attach')
-  if (attach === undefined) throw new Error('plugin did not register /codex-attach')
-  if (commands.find(undefined, 'codex-detach') === undefined) {
-    throw new Error('plugin did not register /codex-detach')
+  const attach = commands.find(undefined, 'codex-lock')
+  if (attach === undefined) throw new Error('plugin did not register /codex-lock')
+  if (commands.find(undefined, 'codex-unlock') === undefined) {
+    throw new Error('plugin did not register /codex-unlock')
   }
-  pass('plugin apply: gateway commands registered', '/codex-attach /codex-detach')
+  pass('plugin apply: gateway commands registered', '/codex-lock /codex-unlock')
 }
 
 async function run(ctx) {

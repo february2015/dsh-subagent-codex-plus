@@ -88,7 +88,7 @@ export class GatewayManager {
     // Q4: the session must not already be bound, and a requested thread must
     // not already be owned by another session.
     if (this.store.get(sessionId) !== undefined) {
-      throw new Error('gateway: this session is already bound to Codex (/codex-detach to unbind)')
+      throw new Error('gateway: this session is already bound to Codex (/codex-unlock to unbind)')
     }
     if (threadId !== undefined && this.store.threadOwner(threadId) !== undefined) {
       throw new Error(`gateway: Codex thread "${threadId}" is already bound to another dsh session`)

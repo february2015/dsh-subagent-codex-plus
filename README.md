@@ -34,8 +34,8 @@ All of the above still works in this fork and serves as the fallback path.
 
 One local command binds your **current dsh conversation 1:1 to one durable Codex thread**, and from then on everything you type in the dsh composer goes straight to Codex — **dsh runs no model in between, it only relays**.
 
-- `/codex-attach` binds the session to a persistent Codex thread (spawns `codex app-server --stdio`; `thread/resume` on restart).
-- `/codex-detach` unbinds and restores the normal dsh agent loop.
+- `/codex-lock` binds the session to a persistent Codex thread (spawns `codex app-server --stdio`; `thread/resume` on restart).
+- `/codex-unlock` unbinds and restores the normal dsh agent loop.
 - Binding is durable in `$DSH_HOME/codex-plus-gateway.json` (`sessionId ↔ threadId`); reopening the dsh session auto-reattaches the same Codex thread. If a previous app-server still holds the thread writer lock after a restart, the gateway retries with exponential backoff (1s→16s) until it reconnects.
 - Mutual exclusivity (Q4): one Codex thread can be bound to only one dsh session; re-binding is rejected.
 
@@ -82,8 +82,8 @@ The profile's `package.json` gets `"dsh-subagent-codex-plus": "link:<this repo>"
 
 ```sh
 # inside a dsh conversation
-/codex-attach    # bind this session to a fresh persistent Codex thread
-/codex-detach    # unbind; the Codex thread is kept for later re-attach
+/codex-lock    # bind this session to a fresh persistent Codex thread
+/codex-unlock    # unbind; the Codex thread is kept for later re-attach
 ```
 
 The session header shows a direct-connect badge, the composer dock shows gateway status, and the floating panel (open from the header button) shows the queue and steer controls.

@@ -34,8 +34,8 @@ kind: "package-bundle"
 
 一条本地指令把你的**当前 dsh 对话 1:1 绑定到一个持久的 Codex 线程**，此后你在 dsh 输入框里的一切输入都直达 Codex——**dsh 中间不跑任何模型，只做搬运**。
 
-- `/codex-attach`：绑定当前会话到持久 Codex 线程（spawn `codex app-server --stdio`；重启后 `thread/resume` 恢复）。
-- `/codex-detach`：解除绑定，恢复普通 dsh 智能体回路；Codex 线程保留，可随时重新 attach。
+- `/codex-lock`：绑定当前会话到持久 Codex 线程（spawn `codex app-server --stdio`；重启后 `thread/resume` 恢复）。
+- `/codex-unlock`：解除绑定，恢复普通 dsh 智能体回路；Codex 线程保留，可随时重新 attach。
 - 绑定持久化在 `$DSH_HOME/codex-plus-gateway.json`（`sessionId ↔ threadId`）；重新进入该 dsh 会话自动重连同一个 Codex 线程。若重启后旧 app-server 仍持有线程写锁，网关会按指数退避（1s→16s）自动重试直到连上。
 - 双向唯一（Q4）：一个 Codex 线程只能被一个 dsh 会话绑定，重复绑定会被拒绝。
 
@@ -82,8 +82,8 @@ profile 的 `package.json` 会写入 `"dsh-subagent-codex-plus": "link:<本仓�
 
 ```sh
 # 在 dsh 对话里输入
-/codex-attach    # 把本会话绑定到一个新的持久 Codex 线程
-/codex-detach    # 解除绑定；Codex 线程保留，可稍后重新 attach
+/codex-lock    # 把本会话绑定到一个新的持久 Codex 线程
+/codex-unlock    # 解除绑定；Codex 线程保留，可稍后重新 attach
 ```
 
 会话头部出现直连徽标，composer 下方显示网关状态条，头部按钮可打开悬浮窗查看队列与 steer 控制。

@@ -61,12 +61,12 @@
     - `conversation.input.dock`（list/session）：输入区上方堆叠条（排队列表实时展示）；
     - `conversation.session.header.actions`（list/session）：挂悬浮窗的打开按钮；
     - 悬浮窗入口另可挂 `conversation.input.right`（输入卡右侧工具行）。
-  - 本地指令：`/codex-attach` 走官方命令体系，`conversation.chat.commandview`
+  - 本地指令：`/codex-lock` 走官方命令体系，`conversation.chat.commandview`
     （keyed on `command/run.name`）原生支持斜杠命令渲染，零注册即可显示。
 
 ## R3 真网关（直连模式）
 
-**需求**：一条本地指令（如 `/codex-attach`）把当前 dsh 对话绑定到一个**新的** Codex 会话；
+**需求**：一条本地指令（如 `/codex-lock`）把当前 dsh 对话绑定到一个**新的** Codex 会话；
 绑定后，dsh 界面上的所有输入输出与 Codex 直接互通，**dsh 不经过任何大模型，只做搬运**。
 
 **已定决策**
@@ -126,7 +126,7 @@
 
 - ✅ dsh 核心消息路由位置：`session.prompt`（api-proxy.js:2116）→ `agent.steer/followup`；唯一 model 检查点在 `turnAgentFor`（:1547）。
 - ✅ 真网关无需打 dsh 补丁：`AgentRegistry.register`（dsh-agent/lib/index.js:580）可注册自定义 `GatewayAgent`（实现 send/followup/steer/inject/cancel），UI 输入输出经 `session.prompt` 直通。
-- ✅ 斜杠命令：`conversation.chat.commandview` 按命令名 keyed，原生可渲染 `/codex-attach`。
+- ✅ 斜杠命令：`conversation.chat.commandview` 按命令名 keyed，原生可渲染 `/codex-lock`。
 - ✅ 槽位：官方清单实证（`conversation.session.header` / `conversation.input.dock` / `conversation.composer.dock` / `conversation.session.header.actions` / `conversation.input.left/right`）。
 - ✅ 悬浮层：dsh-pet 实证（document.body React root + client.inject）。
 - ✅ 队列/steer 协议实测：临时线程拒绝队列（`-32600`）；持久线程 queue/add+auto-drain、queue/list/update/delete/reorder/start、`turn/steer` 全部通过。
