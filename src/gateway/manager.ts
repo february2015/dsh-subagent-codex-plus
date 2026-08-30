@@ -10,7 +10,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { attachGateway, isGatewayAgent, type AttachedGateway } from './attach.ts'
 import type { GatewayEventForwarderOptions } from './events.ts'
-import type { VisionDescriber } from './images.ts'
 import type { GatewayBinding } from './binding.ts'
 import { GatewayBindingStore } from './binding.ts'
 
@@ -45,8 +44,6 @@ export interface GatewayManagerOptions {
   readonly agentOptions?: Record<string, unknown>
   /** Codex → dsh session event forwarding policy (R1-A1/A2). */
   readonly eventForwarder?: GatewayEventForwarderOptions
-  /** Optional vision describer (OCGW `ocgw-vision`) for image descriptions (R4). */
-  readonly vision?: VisionDescriber
 }
 
 /** Owns one live attachment per session plus its durable binding. */
@@ -101,7 +98,6 @@ export class GatewayManager {
       ...this.options.env === undefined ? {} : { env: this.options.env },
       ...this.options.agentOptions === undefined ? {} : { agentOptions: this.options.agentOptions as never },
       ...this.options.eventForwarder === undefined ? {} : { eventForwarder: this.options.eventForwarder },
-      ...this.options.vision === undefined ? {} : { vision: this.options.vision },
       ...threadId === undefined ? {} : { threadId },
     })
     // The manager may have raced another attach for the same thread; the
@@ -166,7 +162,6 @@ export class GatewayManager {
       ...this.options.env === undefined ? {} : { env: this.options.env },
       ...this.options.agentOptions === undefined ? {} : { agentOptions: this.options.agentOptions as never },
       ...this.options.eventForwarder === undefined ? {} : { eventForwarder: this.options.eventForwarder },
-      ...this.options.vision === undefined ? {} : { vision: this.options.vision },
       threadId: binding.codexThreadId,
     })
     this.attached.set(sessionId, attached)

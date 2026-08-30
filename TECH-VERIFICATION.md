@@ -1,6 +1,9 @@
 # dsh-subagent-codex-plus 技术验证报告
 
 > 状态：**全部核心项已实测验证**（2026-08-29）
+> ⚠️ R5 变更（2026-08-30 晚）：视觉兜底已从插件整体移除（`ocgw-vision` 服务/描述注入），图片改**纯透传**；
+> 视觉理解统一由 TeamAI skill `ocgw-vision`（my-agent-hub/skills/ocgw-vision）在各宿主内处理。
+> 下方 §4 的 R4 视觉兜底验证证据保留为历史记录。
 > 验证方式：真实 `codex app-server --stdio` 子进程 + dsh 本机运行时源码审计 + UI 槽位/悬浮层源码审计
 > 项目：`/Users/robin/myProject/dsh-subagent-codex-plus`
 

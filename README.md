@@ -60,7 +60,7 @@ Composer attachments pass through as Codex `localImage` inputs (local path / bas
 
 ### 6. Vision bridge fallback (R4) — owned by the OCGW gateway system
 
-Image understanding belongs to the **OCGW gateway system**, not to this plugin. The `dsh-ocgw` plugin registers a `ocgw-vision` service (`describe(bytes, mediaType)` → structured Chinese description via `glm-5.3-flash` through the local ocgo gateway); this package is only a **consumer**: when it receives an image it asks `ocgw-vision` and injects the description as text alongside the image. If the service is absent or fails, the image still passes through, just undescribed. The strategy applies **both inside Codex and inside the dsh main conversation** — image handling no longer depends on the target model's own vision ability. On the dsh side, the session model must still declare image support (e.g. pick `GLM-5.3 Flash (OCGo)` in the model picker) for the dsh image gate; `dsh-llm-deepseek` is at `0.1.1-rc.2` which preserves `inputModalities` natively.
+Images are **passed through untouched**: dsh attachments are materialized as Codex `localImage` inputs and handed to Codex as-is. Visual understanding is no longer plugin-provided; it is handled by the shared TeamAI skill **`ocgw-vision`** (`my-agent-hub/skills/ocgw-vision`, installed on DSH/PI/OMP/Codex): when the model cannot see images, it follows the skill, asks the user to save the image to a file, and runs `ocgw-vision.sh describe <path>` to get a Chinese description from the ocgo gateway (`glm-5.3-flash`). The plugin-side `ocgw-vision` service and description injection have been removed.
 
 ### 7. Delegation and gateway coexist (Q5)
 
@@ -109,7 +109,6 @@ The session header shows a direct-connect badge, the composer dock shows gateway
 | `gatewayApprovalPolicy` | — | Approval policy for gateway turns (native Codex modes) |
 | `gatewayEventForwarding` | `true` | Forward Codex intermediate events into the dsh session stream |
 | `gatewayAppendFinalMessage` | — | Append the final answer into the dsh session as a normal message |
-| `gatewayVisionEnabled` | `true` | Enable image descriptions; the capability is consumed from the `dsh-ocgw` plugin's `ocgw-vision` service |
 
 ## Documentation
 

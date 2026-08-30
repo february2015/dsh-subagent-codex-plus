@@ -11,8 +11,8 @@
  *
  * Intermediate Codex output is projected into the dsh session log as
  * log-only events (R1-A1, A2) via {@link GatewayEventForwarder}; image blocks
- * are resolved to Codex `localImage` inputs (Q3) with an optional GLM vision
- * description injected as text (R4).
+ * are resolved to Codex `localImage` inputs (Q3); images pass through
+ * untouched (visual understanding is handled by the hosts' `ocgw-vision` skill).
  *
  * @module dsh-subagent-codex-plus/gateway/agent
  */
@@ -39,7 +39,6 @@ import {
   type GatewayEventForwarderOptions,
 } from './events.ts'
 import type { GatewayImageResolver } from './images.ts'
-import type { VisionDescriber } from './images.ts'
 import type { GatewayTextInput, GatewayUserInput } from './wire.ts'
 
 /** Live dsh association supplied by the host when the agent is registered. */
@@ -57,8 +56,6 @@ export interface GatewayAgentOptions {
   readonly eventForwarder?: GatewayEventForwarderOptions
   /** Resolves dsh image blocks to Codex `localImage` inputs (Q3). */
   readonly imageResolver?: GatewayImageResolver
-  /** Optional vision describer (OCGW `ocgw-vision`); when set, images are described as text (R4). */
-  readonly vision?: VisionDescriber
 }
 
 /**
@@ -69,7 +66,6 @@ export async function resolveInputs(
   message: UserMessage,
   injected: readonly string[],
   resolver: GatewayImageResolver | undefined,
-  vision: VisionDescriber | undefined,
 ): Promise<GatewayUserInput[]> {
   const inputs: GatewayUserInput[] = [
     ...injected.map((text): GatewayTextInput => ({ type: 'text', text, text_elements: [] })),
@@ -83,15 +79,8 @@ export async function resolveInputs(
       if (resolver === undefined) {
         throw new Error('gateway: image passthrough not available in this host')
       }
-      const resolved = await resolver.resolve(block.attachment, vision)
+      const resolved = await resolver.resolve(block.attachment)
       inputs.push(resolved.input)
-      if (resolved.description !== undefined) {
-        inputs.push({
-          type: 'text',
-          text: `[图片描述 · ${vision?.model ?? 'vision'}]\n${resolved.description}`,
-          text_elements: [],
-        })
-      }
       continue
     }
     throw new Error(`gateway: unsupported content block "${block.type}" in user message`)
@@ -221,7 +210,6 @@ export class GatewayAgent implements Agent {
       message,
       injected,
       this.agentOptions.imageResolver,
-      this.agentOptions.vision,
     )
     if (kind === 'steer') {
       await this.gateway.steer(inputs)

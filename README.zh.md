@@ -58,9 +58,9 @@ Codex 的执行过程以近实时方式转发进 dsh 会话流：推理摘要、
 
 composer 附件透传为 Codex `localImage` 输入（本地路径/base64），可以直接贴截图让 Codex 看图干活。
 
-### 6. 视觉兜底（R4）——归属 OCGW 体系
+### 6. 图片处理（R5）——纯透传 + 宿主 skill
 
-图片理解能力**属于 OCGW Gateway 体系**，不属于本插件。`dsh-ocgw` 插件注册 `ocgw-vision` 服务（`describe(bytes, mediaType)` → 经本地 ocgo 网关用 `glm-5.3-flash` 生成结构化中文描述）；本插件只是**消费者**：收到图片时调用 `ocgw-vision` 并把描述作为文本随图注入。服务缺失或失败时图片仍原样透传（仅无描述）。该策略**在 Codex 内与 dsh 主对话内同样生效**——看图不再依赖目标模型自身的视觉能力。dsh 侧仍要求会话模型声明支持图片输入（如模型选择器里选 `GLM-5.3 Flash (OCGo)`）以通过 dsh 图片门禁；`dsh-llm-deepseek` 为 `0.1.1-rc.2`，`inputModalities` 原生保留。
+本插件对图片**只做透传**：dsh 附件物化为 Codex `localImage` 输入，原样交给 Codex。视觉理解不再由插件承担，统一由 TeamAI 共享 skill **`ocgw-vision`**（`my-agent-hub/skills/ocgw-vision`，DSH/PI/OMP/Codex 各宿主已安装）处理：模型没有图像能力时按 skill 指引，把图片保存为文件后运行 `ocgw-vision.sh describe <路径>`，由 ocgo 网关的 `glm-5.3-flash` 生成中文描述。插件端的 `ocgw-vision` 服务与描述注入已移除。
 
 ### 7. 委派式与网关式并存（Q5）
 
@@ -109,7 +109,6 @@ profile 的 `package.json` 会写入 `"dsh-subagent-codex-plus": "link:<本仓�
 | `gatewayApprovalPolicy` | — | 网关轮次的审批策略（Codex 原生模式） |
 | `gatewayEventForwarding` | `true` | 把 Codex 中间事件转发进 dsh 会话流 |
 | `gatewayAppendFinalMessage` | — | 把最终答复作为普通消息追加进 dsh 会话 |
-| `gatewayVisionEnabled` | `true` | 开启图片描述；能力消费自 `dsh-ocgw` 插件的 `ocgw-vision` 服务 |
 
 ## 文档
 

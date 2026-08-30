@@ -26,7 +26,7 @@ import { GatewayAgent } from './agent.ts'
 import type { GatewayEventForwarderOptions } from './events.ts'
 import { CodexGateway, type CodexGatewayOptions } from './gateway.ts'
 
-import { GatewayImageResolver, type VisionDescriber } from './images.ts'
+import { GatewayImageResolver } from './images.ts'
 
 /** A live session↔Codex attachment. */
 export interface AttachedGateway {
@@ -57,8 +57,6 @@ export interface AttachGatewayOptions {
   readonly agentOptions?: AgentOptions
   /** Codex → dsh session event forwarding policy (R1-A1/A2). */
   readonly eventForwarder?: GatewayEventForwarderOptions
-  /** Optional vision describer (OCGW `ocgw-vision`); when set, images are described as text (R4). */
-  readonly vision?: VisionDescriber
 }
 
 /** Narrow structural view of the registries' private stores. */
@@ -128,7 +126,6 @@ export async function attachGateway(
   }, gateway, {
     imageResolver,
     ...options.eventForwarder === undefined ? {} : { eventForwarder: options.eventForwarder },
-    ...options.vision === undefined ? {} : { vision: options.vision },
   })
   const scope = createScope(ctx, agent)
   agent.bindCtx(scope.ctx.extend({ agent }))

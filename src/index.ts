@@ -9,7 +9,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { VisionDescriber } from './gateway/images.ts'
 import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
@@ -65,13 +64,6 @@ export interface Config {
   gatewayEventForwarding?: boolean
   /** Append the final Codex reply as a dsh surface event when a turn ends, default false (A2). */
   gatewayAppendFinalMessage?: boolean
-  /**
-   * Enable image descriptions (R4), default true. The description capability
-   * belongs to the OCGW gateway system: it is consumed from the `ocgw-vision`
-   * service registered by the `dsh-ocgw` plugin; when that plugin is absent
-   * (or this is disabled), images pass through undescribed.
-   */
-  gatewayVisionEnabled?: boolean
 }
 
 export const Config: z<Config> = z.object({
@@ -86,7 +78,6 @@ export const Config: z<Config> = z.object({
   gatewayApprovalPolicy: z.string().min(1),
   gatewayEventForwarding: z.boolean().default(true),
   gatewayAppendFinalMessage: z.boolean().default(false),
-  gatewayVisionEnabled: z.boolean().default(true),
 })
 
 type ResolvedConfig = Omit<
@@ -97,7 +88,6 @@ type ResolvedConfig = Omit<
   | 'gatewayApprovalPolicy'
   | 'gatewayEventForwarding'
   | 'gatewayAppendFinalMessage'
-  | 'gatewayVisionEnabled'
 > & Pick<Config, 'model'>
 
 class CodexProvider implements SubagentProvider {
@@ -194,23 +184,6 @@ function installGateway(ctx: Context, config: Config): void {
   const bindingFile = config.gatewayBindingFile
     ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'codex-plus-gateway.json')
   const store = new GatewayBindingStore(bindingFile)
-  // Consume the OCGW `ocgw-vision` service lazily: the dsh-ocgw plugin may
-  // register it after this plugin's apply() ran, so resolve it per image
-  // rather than once at startup.
-  const vision: VisionDescriber | undefined = config.gatewayVisionEnabled === false
-    ? undefined
-    : {
-        get model(): string {
-          return (ctx.get('ocgw-vision', false) as VisionDescriber | undefined)?.model ?? 'vision'
-        },
-        describe: (bytes, mediaType) => {
-          const service = ctx.get('ocgw-vision', false) as VisionDescriber | undefined
-          if (service === undefined) {
-            throw new Error('ocgw-vision: dsh-ocgw 未注册视觉服务，图片仅透传')
-          }
-          return service.describe(bytes, mediaType)
-        },
-      }
   const manager = new GatewayManager(ctx, store, {
     argv: codexAppServerArgv(),
     ...config.model === undefined ? {} : { model: config.model },
@@ -222,7 +195,6 @@ function installGateway(ctx: Context, config: Config): void {
       enabled: config.gatewayEventForwarding ?? true,
       appendFinalMessage: config.gatewayAppendFinalMessage ?? false,
     },
-    ...vision === undefined ? {} : { vision },
   })
   const commands = ctx.get('commands')
   if (commands !== undefined) {

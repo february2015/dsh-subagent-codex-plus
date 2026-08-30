@@ -14,7 +14,6 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { GatewayManager } from './gateway/manager.js'
 import { GatewayBindingStore } from './gateway/binding.js'
 import { isGatewayAgent } from './gateway/attach.js'
-import { VisionBridge, readOcgoVisionConfig } from './gateway/vision.js'
 
 export const name = 'gateway-probe'
 export const inject = ['agents', 'sessions', 'commands', 'llm', 'agentDefaultModel', 'attachments']
@@ -106,12 +105,9 @@ async function run(ctx) {
   // 3. attach: real app-server + durable thread + registry swap.
   const bindingFile = join(cwd, 'gateway-bindings.json')
   const store = new GatewayBindingStore(bindingFile)
-  const ocgo = readOcgoVisionConfig(join(homedir(), '.codex', 'config.toml'))
-  const vision = ocgo === undefined ? undefined : new VisionBridge(ocgo)
   const manager = new GatewayManager(ctx, store, {
     argv,
     agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
-    ...vision === undefined ? {} : { vision },
   })
   manager.installAutoReattach()
   const attached = await manager.attach(sessionId)
@@ -156,7 +152,8 @@ async function run(ctx) {
   pass('1.6: intermediate events logged (turn/step/chunk/turn-end), no surface pollution',
     `chunks=${JSON.stringify([...new Set(chunkKinds)])}`)
 
-  // 4c. 2.3/2.4 Q3/R4: image block -> Codex localImage (+ vision description).
+  // 4c. 2.3 Q3: image block -> Codex localImage (pure passthrough; R5:
+  // visual understanding is handled by the hosts' shared ocgw-vision skill).
   {
     const png = Buffer.from(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -190,16 +187,8 @@ async function run(ctx) {
       throw new Error('2.3: Codex userMessage item did not carry a localImage input')
     }
     const blocks = userItem.map((b) => b?.type)
-    const hasVisionText = vision !== undefined && userItem.some((b) =>
-      b?.type === 'text' && typeof b.text === 'string' && b.text.startsWith('[图片描述'))
     pass('2.3: image -> localImage reached Codex', `blocks=${JSON.stringify(blocks)}`)
-    if (vision === undefined) {
-      pass('2.4: vision bridge skipped (no ocgo route found)')
-    } else if (hasVisionText) {
-      pass('2.4: GLM vision description injected as text', 'glm-5.3-flash')
-    } else {
-      throw new Error('2.4: vision bridge enabled but no [图片描述 text block reached Codex')
-    }
+    pass('2.4: image passes through undescribed (R5, vision handled by ocgw-vision skill)')
     const imgEvents = attached.agent.session.events.slice(beforeImage)
     if (!imgEvents.some((e) => e.type === 'assistant/chunk')) {
       throw new Error('2.3: image turn produced no assistant chunks in the session log')

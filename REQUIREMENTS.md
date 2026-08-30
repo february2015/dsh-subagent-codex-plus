@@ -84,6 +84,12 @@
 **需求**：主模型（Codex 内 / DSH 内）不支持视觉时，遇到图片一律交给视觉模型 `glm-5.3-flash` 处理（理解/描述/OCR），
 结果作为文本继续走原流程。该策略**不止在 Codex 里生效，在 DSH 里同样生效**。
 
+**R5 变更（2026-08-30 晚，用户定稿）**：视觉兜底不再由插件承担——`dsh-ocgw` 的 `ocgw-vision` 服务
+与本插件的描述注入均已移除，图片在网关式路径里**纯透传**；视觉理解统一改为 TeamAI 共享 skill **`ocgw-vision`**
+（`my-agent-hub/skills/ocgw-vision`，DSH/PI/OMP/Codex 各宿主安装）：模型无图像能力时，按 skill 指引请用户把图片
+保存为文件，运行 `ocgw-vision.sh describe <路径>` 由 ocgo 网关 `glm-5.3-flash` 生成中文描述后继续任务。
+下方 R4 决策保留作为历史记录。
+
 **架构归属（2026-08-30 用户定稿）**
 - **视觉兜底不属 dsh-subagent-codex-plus**，而是 **OCGW Gateway 体系**的能力：由 `ocgo-gateway/extensions/dsh-ocgw` 插件提供，
   注册 cordis service **`ocgw-vision`**（`describe(bytes, mediaType) → 文本描述`，走本地 ocgo 网关 + gateway-key 鉴权，模型默认 `glm-5.3-flash`）。
