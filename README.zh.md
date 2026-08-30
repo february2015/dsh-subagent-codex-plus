@@ -1,5 +1,5 @@
 ---
-description: "Fork 自官方 @deepseek-ai/dsh-subagent-codex：保留官方 one-shot Codex 委派，并新增真网关直连、排队/插入连续对话、中间过程实时透出、图片透传与 GLM 视觉兜底。"
+description: "Fork 自官方 @deepseek-ai/dsh-subagent-codex：保留官方 one-shot Codex 委派，并新增真网关直连、排队/插入连续对话、中间过程实时透出与图片透传（视觉兜底归 OCGW 体系 ocgw-vision skill，非插件内置）。"
 kind: "package-bundle"
 ---
 
@@ -60,9 +60,9 @@ Codex 的执行过程以近实时方式转发进 dsh 会话流：推理摘要、
 
 composer 附件透传为 Codex `localImage` 输入（本地路径/base64），可以直接贴截图让 Codex 看图干活。
 
-### 6. 图片处理（R5）——纯透传 + 宿主 skill
+### 6. 图片处理（R4）——纯透传 + 宿主 skill
 
-本插件对图片**只做透传**：dsh 附件物化为 Codex `localImage` 输入，原样交给 Codex。视觉理解不再由插件承担，统一由 TeamAI 共享 skill **`ocgw-vision`**（`my-agent-hub/skills/ocgw-vision`，DSH/PI/OMP/Codex 各宿主已安装）处理：模型没有图像能力时按 skill 指引，把图片保存为文件后运行 `ocgw-vision.sh describe <路径>`，由 ocgo 网关的 `glm-5.3-flash` 生成中文描述。插件端的 `ocgw-vision` 服务与描述注入已移除。
+本插件对图片**只做透传**：dsh 附件物化为 Codex `localImage` 输入，原样交给 Codex。视觉理解不再由插件承担，统一由 TeamAI 共享 skill **`ocgw-vision`**（`my-agent-hub/skills/ocgw-vision`，DSH/PI/OMP/Codex 各宿主已安装）处理：模型没有图像能力时按 skill 指引，把图片保存为文件后运行 `ocgw-vision.sh describe <路径>`，由 ocgo 网关的 `glm-5.3-flash` 生成中文描述。插件端的 `ocgw-vision` 服务与描述注入已移除（R5 变更）。
 
 ### 7. 委派式与网关式并存（Q5）
 

@@ -1,5 +1,5 @@
 ---
-description: "Fork of @deepseek-ai/dsh-subagent-codex: keeps the official one-shot Codex delegation and adds a true-gateway direct connection, queued/steered continuous conversation, intermediate-event forwarding, image passthrough, and a GLM vision bridge for DeepSeek Harness."
+description: "Fork of @deepseek-ai/dsh-subagent-codex: keeps the official one-shot Codex delegation and adds a true-gateway direct connection, queued/steered continuous conversation, intermediate-event forwarding, and image passthrough for DeepSeek Harness (vision fallback is routed through the OCGW gateway system via the ocgw-vision skill, not plugin-provided)."
 kind: "package-bundle"
 ---
 
@@ -60,9 +60,9 @@ Codex's execution progress is forwarded into the dsh session stream in near real
 
 Composer attachments pass through as Codex `localImage` inputs (local path / base64), so you can paste screenshots and have Codex act on them.
 
-### 6. Vision bridge fallback (R4) — owned by the OCGW gateway system
+### 6. Image handling (R4) — pure passthrough + host skill
 
-Images are **passed through untouched**: dsh attachments are materialized as Codex `localImage` inputs and handed to Codex as-is. Visual understanding is no longer plugin-provided; it is handled by the shared TeamAI skill **`ocgw-vision`** (`my-agent-hub/skills/ocgw-vision`, installed on DSH/PI/OMP/Codex): when the model cannot see images, it follows the skill, asks the user to save the image to a file, and runs `ocgw-vision.sh describe <path>` to get a Chinese description from the ocgo gateway (`glm-5.3-flash`). The plugin-side `ocgw-vision` service and description injection have been removed.
+Images are **passed through untouched**: dsh attachments are materialized as Codex `localImage` inputs and handed to Codex as-is. Visual understanding is no longer plugin-provided; it is handled by the shared TeamAI skill **`ocgw-vision`** (`my-agent-hub/skills/ocgw-vision`, installed on DSH/PI/OMP/Codex): when the model cannot see images, it follows the skill, asks the user to save the image to a file, and runs `ocgw-vision.sh describe <path>` to get a Chinese description from the ocgo gateway (`glm-5.3-flash`). The plugin-side `ocgw-vision` service and description injection have been removed (R5 change).
 
 ### 7. Delegation and gateway coexist (Q5)
 
