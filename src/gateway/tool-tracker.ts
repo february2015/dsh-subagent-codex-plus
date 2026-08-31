@@ -24,10 +24,11 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function isToolType(type: unknown): boolean {
-  return type === 'functionCall' || type === 'dynamicToolCall'
+  return type === 'commandExecution' || type === 'functionCall' || type === 'dynamicToolCall'
 }
 
 function toolNameOf(item: Record<string, unknown>): string {
+  if (item.type === 'commandExecution') return 'shell_command'
   const tool = item.tool
   if (typeof tool === 'string' && tool.length > 0) return tool
   const nested = asRecord(tool)

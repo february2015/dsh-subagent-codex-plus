@@ -1,7 +1,7 @@
 {
   "name": "dsh-subagent-codex-plus",
   "description": "One-shot Codex subagent provider over the official app-server protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },

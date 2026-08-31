@@ -27,7 +27,7 @@
  */
 
 import { createAssistantMessage, type CallId, type ContentBlock, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { Session, TurnEndReason } from '@deepseek-ai/dsh-session'
+import type { Session, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import type { CodexGatewayNotification } from './wire.ts'
 
 /** Forwarding policy for the Codex → dsh session event stream. */
@@ -42,13 +42,32 @@ export const DEFAULT_EVENT_FORWARDER_OPTIONS: GatewayEventForwarderOptions = {
   enabled: true,
 }
 
-/** Item types whose lifecycle carries intermediate work worth logging. */
-type ForwardedItem = 'reasoning' | 'agentMessage' | 'dynamicToolCall' | 'functionCall'
+/**
+ * Item types whose lifecycle carries intermediate work worth logging.
+ * Verified against a real app-server: a shell tool call arrives as an
+ * `item/started`/`item/completed` pair with `item.type === 'commandExecution'`
+ * (plus live `item/commandExecution/outputDelta`); the `functionCall`/
+ * `dynamicToolCall` names are kept for the legacy/API variants.
+ */
+type ForwardedItem = 'reasoning' | 'agentMessage' | 'commandExecution' | 'dynamicToolCall' | 'functionCall'
 
 function itemType(value: unknown): ForwardedItem | undefined {
   if (value === 'reasoning' || value === 'agentMessage') return value
-  if (value === 'dynamicToolCall' || value === 'functionCall') return value
+  if (value === 'commandExecution' || value === 'dynamicToolCall' || value === 'functionCall') return value
   return undefined
+}
+
+/** Resolve a tool display name across the real (`commandExecution`) and legacy shapes. */
+function toolDisplayName(item: Record<string, unknown>): string {
+  if (item.type === 'commandExecution') return 'shell_command'
+  const tool = item.tool
+  if (typeof tool === 'string' && tool.length > 0) return tool
+  if (tool !== null && typeof tool === 'object' && !Array.isArray(tool)) {
+    const name = (tool as Record<string, unknown>).name
+    if (typeof name === 'string' && name.length > 0) return name
+  }
+  const name = item.name
+  return typeof name === 'string' && name.length > 0 ? name : 'unknown'
 }
 
 function readString(value: unknown, label: string): string | undefined {
@@ -96,6 +115,12 @@ export class GatewayEventForwarder {
   private step = 0
   private activeTurnId: string | undefined
   private stepOpen = false
+  /**
+   * Content snapshots of steps closed by a mid-turn steer. When a steer
+   * races turn completion the final step streams nothing, and the durable
+   * reply must settle the last step that actually produced content instead.
+   */
+  private readonly stepContent = new Map<number, { readonly blocks: ContentBlock[] }>()
   /** Reasoning deltas keyed by Codex item id, in first-seen order. */
   private readonly reasoningByItem = new Map<string, { readonly itemId: string; readonly index: number; text: string }>()
   private readonly reasoningOrder: string[] = []
@@ -175,6 +200,7 @@ export class GatewayEventForwarder {
     }
     this.turn += 1
     this.step = 1
+    this.stepContent.clear()
     this.activeTurnId = turnId
     this.stepOpen = false
     this.append('turn/start', { turn: this.turn })
@@ -201,7 +227,7 @@ export class GatewayEventForwarder {
     const item = asRecord(params.item)
     if (item === undefined || this.activeTurnId === undefined) return
     const type = itemType(item.type)
-    if (type === 'dynamicToolCall' || type === 'functionCall') {
+    if (type === 'commandExecution' || type === 'dynamicToolCall' || type === 'functionCall') {
       this.recordToolCall(item)
     }
   }
@@ -231,12 +257,62 @@ export class GatewayEventForwarder {
   }
 
   /**
+   * Land a mid-turn steer on the surface as its own step boundary.
+   *
+   * Codex `turn/steer` redirects the ACTIVE turn without a new
+   * `turn/started`, so without an explicit boundary every post-steer chunk
+   * folds back into the pre-steer assistant node (same turn:step key) and
+   * renders ABOVE the inserted message. Closing the step, appending the
+   * inserted prompt, then opening a fresh step gives the fold the ordering
+   * the user expects: pre-steer output, inserted prompt, post-steer output.
+   */
+  appendSteerMessage(message: UserMessage): void {
+    if (this.activeTurnId === undefined) return
+    this.closeStep()
+    const blocks = this.collectBlocks()
+    if (blocks.length > 0) this.stepContent.set(this.step, { blocks })
+    this.step += 1
+    this.resetAccumulators()
+    this.appendSurface('user/message', message)
+    this.openStep()
+  }
+
+  /**
    * Assemble the streamed deltas into the durable `assistant/message` that
    * closes the step on the surface. Interrupted turns carry `interrupted`
    * exactly like a cancelled dsh turn, so the UI marks only genuinely
    * aborted replies; completed turns settle normally.
    */
   private appendFinalMessage(status: unknown): void {
+    let step = this.step
+    let blocks = this.collectBlocks()
+    if (blocks.length === 0) {
+      // The final step streamed nothing (a steer raced turn completion):
+      // settle the newest closed step that actually produced content so the
+      // turn's real reply is not orphaned as an interrupted node.
+      let fallbackStep = -1
+      for (const [candidate, snapshot] of this.stepContent) {
+        if (snapshot.blocks.length > 0 && candidate > fallbackStep) fallbackStep = candidate
+      }
+      if (fallbackStep >= 0) {
+        step = fallbackStep
+        blocks = this.stepContent.get(fallbackStep)?.blocks ?? []
+      }
+    }
+    const message = createAssistantMessage({
+      content: blocks,
+      source: { provider: 'codex', model: 'codex' },
+    })
+    this.appendSurface('assistant/message', {
+      turn: this.turn,
+      step,
+      message,
+      ...status === 'interrupted' ? { interrupted: true } : {},
+    })
+  }
+
+  /** Assemble the current step's accumulated reasoning/text blocks. */
+  private collectBlocks(): ContentBlock[] {
     const blocks: ContentBlock[] = []
     for (const itemId of this.reasoningOrder) {
       const accumulator = this.reasoningByItem.get(itemId)
@@ -250,16 +326,7 @@ export class GatewayEventForwarder {
         blocks.push({ type: 'text', text })
       }
     }
-    const message = createAssistantMessage({
-      content: blocks,
-      source: { provider: 'codex', model: 'codex' },
-    })
-    this.appendSurface('assistant/message', {
-      turn: this.turn,
-      step: this.step,
-      message,
-      ...status === 'interrupted' ? { interrupted: true } : {},
-    })
+    return blocks
   }
 
   private resetAccumulators(): void {
@@ -273,13 +340,14 @@ export class GatewayEventForwarder {
     const rawCallId = readString(item.id, 'item id') ?? readString(item.callId, 'call id')
     if (rawCallId === undefined) return
     const callId = rawCallId as CallId
-    const name = readString(item.tool, 'tool name') ?? readString(item.name, 'tool name') ?? 'unknown'
-    const args = item.arguments
+    // `commandExecution` items carry the command itself rather than JSON
+    // `arguments`; show the shell line so the rendered tool node is readable.
+    const args = item.type === 'commandExecution' ? item.command : item.arguments
     this.append('tool/call', {
       turn: this.turn,
       step: this.step,
       callId,
-      name,
+      name: toolDisplayName(item),
       arguments: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
     })
   }

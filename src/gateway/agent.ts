@@ -224,9 +224,11 @@ export class GatewayAgent implements Agent {
       // `turn/steer` redirects the ACTIVE turn without a new `turn/started`
       // notification, so a prompt buffered for release on turn start would
       // never flush and the inserted message would never reach the chat.
-      // Land it on the surface immediately; it belongs to the running turn.
+      // Land it on the surface immediately, wrapped in a step boundary so
+      // the post-steer output folds AFTER the inserted prompt instead of
+      // back into the pre-steer assistant node.
       try {
-        this.session.append('user/message', message, { surfaceOp: 'append' })
+        this.forwarder.appendSteerMessage(message)
       } catch (error: unknown) {
         this.report(error)
       }

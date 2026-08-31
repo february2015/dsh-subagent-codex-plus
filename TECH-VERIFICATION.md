@@ -76,6 +76,16 @@ app-server 会推送全量中间事件（消息中间件层）：
 
 **结论**：R1-A1（事件块级注入）数据源完全够用，中间过程全量可得，无需改 dsh 即可近实时呈现；A1-b（字节级流式渲染）才是需要给 dsh 打补丁/验证 Web UI 流式能力的部分。
 
+### 2.5.1 真实 app-server 工具调用线形（2026-08-31，e2e 实测）
+
+用真实 `codex app-server --stdio`（0.149.1，本地 Responses fixture 模拟模型）跑一次 shell 工具调用，抓到的通知流为：
+
+- `item/started` `{ item: { type: 'commandExecution', id: <callId>, command: "/bin/zsh -lc 'echo PROBE_…'", status: 'inProgress', … } }`
+- `item/commandExecution/outputDelta`（执行期增量输出）
+- `item/completed` `{ item: { type: 'commandExecution', id: <同一callId>, status: 'completed', … } }`
+
+**结论**：真实线形是 `commandExecution`（不是 `functionCall`/`dynamicToolCall`），命令本身在 `item.command`。`GatewayEventForwarder.recordToolCall` 需认 `commandExecution` 并把 `item.command` 作为 `arguments` 落盘，`ActiveToolTracker` 同样认该类型，心跳（"正在执行 shell_command · 已运行 X 分 Y 秒"）才能生效。回归见 `tests/gateway-events.e2e.ts`（`npx vitest run --config vitest.e2e.config.ts gateway-events`）。
+
 ### 2.6 持久化（C3 依据，实测）
 
 - 持久线程自动落盘：`~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-<timestamp>-<threadId>.jsonl`（probe3 实测生成 93KB）。

@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { ActiveToolTracker } from '../src/gateway/tool-tracker.ts'
 
 describe('ActiveToolTracker long-tool heartbeat', () => {
+  it('records a commandExecution item/started as the active tool (real wire shape)', () => {
+    const tracker = new ActiveToolTracker()
+    tracker.onItemStarted({
+      item: { type: 'commandExecution', id: 'call_1', command: 'sleep 3 && echo PROBE_DONE', status: 'inProgress' },
+    }, 1_700_000_000_000)
+    expect(tracker.current).toEqual({ name: 'shell_command', startedAt: 1_700_000_000_000 })
+    tracker.onItemCompleted({ item: { type: 'commandExecution', id: 'call_1', status: 'completed' } })
+    expect(tracker.current).toBeUndefined()
+  })
+
   it('records a functionCall item/started as the active tool', () => {
     const tracker = new ActiveToolTracker()
     tracker.onItemStarted({ item: { type: 'functionCall', name: 'shell_command', arguments: '{}' } }, 1_700_000_000_000)

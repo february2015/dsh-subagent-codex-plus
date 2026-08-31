@@ -128,6 +128,7 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [actionError, setActionError] = useState<string | undefined>(undefined)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const refreshAnchor = useCallback(() => setAnchor(chatInputRect()), [])
   useEffect(() => {
@@ -163,8 +164,16 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
 
   const insertNow = async (item: { id: string; text: string }): Promise<void> => {
     if (sessionId === undefined) return
+    setNotice(null)
     const ok = await run((api) => api.steer(sessionId, item.text))
-    if (ok) await run((api) => api.queueDelete(sessionId, item.id))
+    if (ok) {
+      // Steer is injected at the model's next iteration; when Codex is
+      // executing a long tool the insert visibly "does nothing" until the
+      // tool returns, so acknowledge it explicitly instead of looking lost.
+      setNotice('已插入当前回合：当前工具/步骤结束后生效')
+      setTimeout(() => setNotice(null), 8000)
+      await run((api) => api.queueDelete(sessionId, item.id))
+    }
   }
 
   const saveEdit = async (item: { id: string }): Promise<void> => {
@@ -294,6 +303,11 @@ export function QueuePanel(props: PropsRuntime<'shell.overlay'>) {
           <span style={{ color: THEME.textTertiary, fontSize: 11 }}>
             排队消息在 Codex 忙时自动入队
           </span>
+        </div>
+      )}
+      {notice !== null && (
+        <div style={{ padding: '6px 12px', color: THEME.accent, fontSize: 11, borderTop: `1px solid ${THEME.borderSubtle}` }}>
+          {notice}
         </div>
       )}
       {actionError !== undefined && (

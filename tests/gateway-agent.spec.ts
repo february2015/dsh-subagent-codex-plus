@@ -31,6 +31,10 @@ function fakeGateway(initial: 'idle' | 'running' = 'idle'): CodexGateway {
       submitted.push([...inputs])
       return Promise.resolve({ kind: 'turn', id: 'turn-test' })
     },
+    steer(inputs: readonly GatewayUserInput[]): Promise<string | undefined> {
+      submitted.push([...inputs])
+      return Promise.resolve('turn-test')
+    },
     submitted,
   } as unknown as CodexGateway
 }
@@ -166,4 +170,124 @@ it('queues a busy followup on the inbox and drains it into its own turn', async 
     .filter((event) => event.type === 'user/message')
   expect(userMessages).toHaveLength(1)
   expect((userMessages[0]?.data as { content: Array<{ type: string; text: string }> }).content[0]?.text).toBe('hello')
+})
+
+describe('mid-turn steer step split', () => {
+  interface Event {
+    type: string
+    data: Record<string, unknown>
+  }
+
+  it('closes the running step, lands the inserted prompt, and opens the next step', async () => {
+    const gateway = fakeGateway('running')
+    const session = fakeSession()
+    const inbox = new Inbox(session, {
+      inserted: () => {},
+      discarded: () => {},
+      claimed: () => {},
+    })
+    const agent = new GatewayAgent({
+      id: 'session-steer-split',
+      session,
+      inbox,
+      ctx: undefined,
+      options: { provider: 'codex-plus' },
+    } as GatewayAgentHost, gateway)
+
+    const events = () => (session as unknown as { events: Event[] }).events
+
+    // A turn starts and streams pre-steer reasoning on step 1.
+    gateway.emit('notification', { method: 'turn/started', params: { turn: { id: 'turn-1' } } })
+    gateway.emit('notification', {
+      method: 'item/reasoning/textDelta',
+      params: { itemId: 'reason-1', contentIndex: 0, delta: 'before' },
+    })
+
+    // The user inserts a prompt while the turn is running.
+    const inserted = createUserMessage({
+      content: [{ type: 'text', text: '插入的指令' }],
+      source: { kind: 'user' },
+    })
+    agent.steer(inserted)
+
+    // Post-steer output streams.
+    gateway.emit('notification', {
+      method: 'item/reasoning/textDelta',
+      params: { itemId: 'reason-2', contentIndex: 0, delta: 'after' },
+    })
+    gateway.emit('notification', {
+      method: 'item/agentMessage/delta',
+      params: { contentIndex: 0, delta: 'answer' },
+    })
+    gateway.emit('notification', { method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed' } } })
+
+    const log = events()
+    const stepEnds = log.filter(event => event.type === 'step/end').map(event => event.data)
+    const stepStarts = log.filter(event => event.type === 'step/start').map(event => event.data)
+    const userMessages = log.filter(event => event.type === 'user/message').map(event => event.data)
+    const chunks = log.filter(event => event.type === 'assistant/chunk').map(event => event.data)
+    const finalMessage = log.find(event => event.type === 'assistant/message')?.data as Record<string, unknown>
+
+    // Step 1 closes at the steer, the inserted prompt lands, step 2 opens,
+    // and step 2 closes when the turn completes — in that order.
+    expect(stepEnds).toEqual([{ turn: 1, step: 1 }, { turn: 1, step: 2 }])
+    expect(stepStarts).toEqual([{ turn: 1, step: 1 }, { turn: 1, step: 2 }])
+    expect(userMessages).toHaveLength(1)
+    expect((userMessages[0]?.content as Array<{ type: string; text: string }>)[0]?.text).toBe('插入的指令')
+    const stepEndSeq = log.indexOf(log.find(event => event.type === 'step/end')!)
+    const userSeq = log.indexOf(log.find(event => event.type === 'user/message')!)
+    const step2Seq = log.indexOf(log.find(event => event.type === 'step/start' && event.data.step === 2)!)
+    expect(stepEndSeq).toBeLessThan(userSeq)
+    expect(userSeq).toBeLessThan(step2Seq)
+
+    // Pre-steer chunks stay on step 1; post-steer chunks land on step 2 so
+    // the fold renders them AFTER the inserted prompt.
+    expect(chunks.filter(chunk => chunk.step === 1)).toHaveLength(1)
+    expect(chunks.filter(chunk => chunk.step === 2)).toHaveLength(2)
+
+    // The durable reply settles step 2 (the step that streamed content).
+    expect(finalMessage.turn).toBe(1)
+    expect(finalMessage.step).toBe(2)
+    const message = finalMessage.message as { content: Array<{ type: string; text: string }> }
+    const text = message.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(text).toBe('answer')
+  })
+
+  it('settles the last content step when a steer races turn completion', async () => {
+    const gateway = fakeGateway('running')
+    const session = fakeSession()
+    const inbox = new Inbox(session, {
+      inserted: () => {},
+      discarded: () => {},
+      claimed: () => {},
+    })
+    const agent = new GatewayAgent({
+      id: 'session-steer-race',
+      session,
+      inbox,
+      ctx: undefined,
+      options: { provider: 'codex-plus' },
+    } as GatewayAgentHost, gateway)
+
+    const events = () => (session as unknown as { events: Event[] }).events
+
+    gateway.emit('notification', { method: 'turn/started', params: { turn: { id: 'turn-1' } } })
+    gateway.emit('notification', {
+      method: 'item/reasoning/textDelta',
+      params: { itemId: 'reason-1', contentIndex: 0, delta: 'real reply' },
+    })
+    agent.steer(createUserMessage({
+      content: [{ type: 'text', text: '太迟的插入' }],
+      source: { kind: 'user' },
+    }))
+    // The turn completed before the steer produced any new output.
+    gateway.emit('notification', { method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed' } } })
+
+    const log = events()
+    const finalMessage = log.find(event => event.type === 'assistant/message')?.data as Record<string, unknown>
+    expect(finalMessage.step).toBe(1)
+    const message = finalMessage.message as { content: Array<{ type: string; text: string }> }
+    const text = message.content.filter(block => block.type === 'reasoning').map(block => block.text).join('')
+    expect(text).toBe('real reply')
+  })
 })
