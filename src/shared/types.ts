@@ -31,6 +31,17 @@ export interface GatewaySessionView {
   readonly phase: string
   /** Whether a Codex turn is currently running. */
   readonly running: boolean
+  /**
+   * Codex tool call currently executing while a turn is running (long-tool
+   * heartbeat). Present only while a tool item is open; clients derive the
+   * elapsed time from `startedAt` so the "已运行 X 分 Y 秒" line ticks live.
+   */
+  readonly tool?: {
+    /** Tool name as reported by Codex (e.g. `shell_command`). */
+    readonly name: string
+    /** Epoch ms when the tool call started. */
+    readonly startedAt: number
+  }
   /** Pending queue (FIFO order). */
   readonly queue: readonly GatewayQueueItemView[]
   /** Last action error surfaced to the UI, if any. */

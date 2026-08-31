@@ -340,6 +340,7 @@ export class GatewayUiService {
       // Queue read failure must not blank the badge; keep the last-known view
       // and surface the transient state through phase.
     }
+    const activeTool = attached.gateway.currentTool
     return {
       sessionId,
       attached: true,
@@ -347,6 +348,7 @@ export class GatewayUiService {
       phase: attached.gateway.phase,
       running: attached.gateway.turnState === 'running',
       queue,
+      ...activeTool === undefined ? {} : { tool: activeTool },
     }
   }
 

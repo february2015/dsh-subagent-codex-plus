@@ -105,12 +105,30 @@ const STATUS_LINE = {
   width: '100%',
 }
 
+/**
+ * Long-tool heartbeat: shows the executing Codex tool in the dock status
+ * line and, once it has run for a minute, the elapsed time — so a
+ * multi-minute local command never looks like a hang.
+ */
+export function toolHeartbeat(view: GatewaySessionView | null): string | null {
+  const tool = view?.tool
+  if (view?.attached !== true || view.running !== true || tool === undefined) return null
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - tool.startedAt) / 1000))
+  const label = `正在执行 ${tool.name}`
+  if (elapsedSec < 60) return label
+  const minutes = Math.floor(elapsedSec / 60)
+  const seconds = elapsedSec % 60
+  return `${label} · 已运行 ${minutes} 分 ${seconds} 秒`
+}
+
 function statusText(view: GatewaySessionView | null): string | null {
   if (view?.attached) {
     const parts = [
       `Codex 直连 · ${shortThread(view.threadId ?? '')}`,
       view.running ? '运行中' : '空闲',
     ]
+    const heartbeat = toolHeartbeat(view)
+    if (heartbeat !== null) parts.push(heartbeat)
     if (view.queue.length > 0) parts.push(`队列 ${view.queue.length}`)
     return parts.join(' · ')
   }

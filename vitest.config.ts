@@ -13,8 +13,10 @@ export default defineConfig({
     // handles as leaks and its fake-stack error crashes the default reporter.
     detectAsyncLeaks: false,
     include: [
+      'tests/gateway-agent.spec.ts',
       'tests/loader-composition.e2e.ts',
       'tests/subagent-codex.spec.ts',
+      'tests/tool-tracker.spec.ts',
     ],
   },
 })

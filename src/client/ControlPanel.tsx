@@ -19,6 +19,7 @@ import {
   usePanelState,
 } from './gateway-store.ts'
 import type { GatewaySessionView } from '../shared/types.ts'
+import { toolHeartbeat } from './components.tsx'
 import { PANEL_HOVER_CSS, THEME } from './theme.ts'
 
 const PANEL_WIDTH = 340
@@ -138,6 +139,7 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
     ;(event.currentTarget as HTMLDivElement).releasePointerCapture(event.pointerId)
   }, [])
 
+  const heartbeat = toolHeartbeat(view)
   const run = useCallback(async (
     action: (api: import('./api.ts').GatewayApi) => Promise<{ ok: boolean; error?: string }>,
   ): Promise<boolean> => {
@@ -248,7 +250,9 @@ export function ControlPanel(props: PropsRuntime<'shell.overlay'>) {
               {loading && ' · 载入中'}
             </div>
             <div style={{ color: THEME.textSecondary, fontSize: 12, lineHeight: '20px' }}>
-              状态：{statusBadge(view)}{view?.attached === true ? ` · 队列 ${view.queue.length}` : ''}
+              状态：{statusBadge(view)}
+              {view?.attached === true ? ` · 队列 ${view.queue.length}` : ''}
+              {heartbeat !== null ? ` · ${heartbeat}` : ''}
             </div>
           </div>
 

@@ -18,6 +18,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { agentEvents } from '@deepseek-ai/dsh-agent'
 import type {
   Agent,
   AgentOptions,
@@ -104,6 +105,10 @@ export class GatewayAgent implements Agent {
   private readonly pendingUserMessages: UserMessage[] = []
   private readonly idleResolvers = new Set<() => void>()
   private maintenanceSignal: AbortSignal | undefined
+  /** Last status reported to the host; guards against duplicate `agent/status`. */
+  private reportedStatus: AgentStatus | undefined
+  /** Codex → dsh event projection; also owns the dsh turn ordinal. */
+  private readonly forwarder: GatewayEventForwarder
 
   constructor(
     private readonly host: GatewayAgentHost,
@@ -116,15 +121,19 @@ export class GatewayAgent implements Agent {
     this.inbox = host.inbox
     this.ctx = host.ctx ?? (undefined as unknown as Context)
     void this.inbox
-    this.gateway.on('turn', () => this.reconcileIdle())
-    const forwarder = new GatewayEventForwarder(
+    this.gateway.on('turn', () => {
+      this.reconcileIdle()
+      this.emitStatus()
+      this.drainQueue()
+    })
+    this.forwarder = new GatewayEventForwarder(
       this.session,
       {
         ...(this.agentOptions.eventForwarder ?? DEFAULT_EVENT_FORWARDER_OPTIONS),
         onError: (message) => this.report(new Error(message)),
       },
     )
-    this.gateway.on('notification', (notification) => forwarder.forward(notification))
+    this.gateway.on('notification', (notification) => this.forwarder.forward(notification))
     // The forwarder listener above runs first, so `turn/start`/`step/start`
     // land before the prompt; the prompt then opens its own turn on the
     // surface instead of piling up in the host inbox queue.
@@ -146,6 +155,19 @@ export class GatewayAgent implements Agent {
   }
 
   followup(message: UserMessage): void {
+    if (this.gateway.turnState === 'running') {
+      // Queue durably on the dsh inbox while the gateway is busy: the host
+      // broadcasts `session/queue` from the inbox splice, so the composer's
+      // queue strip shows the prompt immediately (and the host's queue
+      // management can edit/delete/steer it). The queued prompt becomes a
+      // durable `user/message` when its turn starts via {@link drainQueue}.
+      try {
+        this.inbox.append('next-turn', message)
+      } catch (error: unknown) {
+        this.report(error)
+      }
+      return
+    }
     this.dispatch('followup', message)
   }
 
@@ -162,6 +184,9 @@ export class GatewayAgent implements Agent {
   /** Bind the agent-scoped context after construction (attach wiring). */
   bindCtx(ctx: Context): void {
     this.ctx = ctx
+    // Publish the current status once the host context is available so the
+    // dsh client's running indicator reflects a resumed in-flight turn too.
+    this.emitStatus()
   }
 
   cancel(cause: AgentCancelCause, options?: CancelOptions): void {
@@ -231,6 +256,39 @@ export class GatewayAgent implements Agent {
     }
   }
 
+  /**
+   * Submit the next inbox-queued prompt once the gateway is idle. Called from
+   * every turn transition, so a chain of queued prompts drains one turn at a
+   * time (mirroring the loop agent's claim-on-boundary semantics). The
+   * claimed message is held in `pendingUserMessages` until `turn/started`
+   * releases it as the durable surface prompt.
+   */
+  private drainQueue(): void {
+    if (this.gateway.turnState !== 'idle') return
+    if (this.pendingUserMessages.length > 0) return
+    if (this.inbox.nextTurn.length === 0) return
+    // `claim('next-turn', …)` returns next-step inputs followed by one
+    // next-turn prompt; the gateway drives one prompt per turn.
+    const claimed = this.inbox.claim('next-turn', this.forwarder.nextTurnOrdinal())
+    const message = claimed[claimed.length - 1]
+    if (message === undefined) return
+    this.pendingUserMessages.push(message)
+    const injected = this.pendingInject
+    this.pendingInject = []
+    void this.resolveAndRoute('followup', message, injected).catch((error: unknown) => {
+      // The submission never reached the wire: drop the in-flight slot and
+      // restore the prompt to the front of the durable queue.
+      const index = this.pendingUserMessages.indexOf(message)
+      if (index >= 0) this.pendingUserMessages.splice(index, 1)
+      try {
+        this.inbox.prepend('next-turn', message)
+      } catch (prependError: unknown) {
+        this.report(prependError)
+      }
+      this.report(error)
+    })
+  }
+
   private async resolveAndRoute(
     kind: 'followup' | 'steer',
     message: UserMessage,
@@ -254,6 +312,27 @@ export class GatewayAgent implements Agent {
   private report(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error)
     ;(this.ctx as Context | undefined)?.logger?.warn?.(`[gateway] ${message}`)
+  }
+
+  /**
+   * Publish the agent status transition to the host. The dsh host derives
+   * each client session's live `running` bit from `agent/status` events
+   * (`host/session-status` frames); without them a client that learned the
+   * agent was busy (session summary) never flips back to idle, so the chat
+   * keeps rendering "thinking" and the stop button stays enabled while
+   * `cancel()` has no active turn to interrupt. Emits only on real
+   * transitions: the agent invariant rejects repeated no-op status events.
+   */
+  private emitStatus(): void {
+    const status = this.status
+    if (this.reportedStatus === status) return
+    this.reportedStatus = status
+    if (this.ctx === undefined) return
+    try {
+      agentEvents(this.ctx, this).emit('agent/status', { status })
+    } catch (error: unknown) {
+      this.report(error)
+    }
   }
 
   private reconcileIdle(): void {

@@ -35,13 +35,15 @@ One local command binds your **current dsh conversation 1:1 to a durable Codex t
 
 ### 2. Continuous conversation: queue + direct insert
 
-- While Codex is busy, new messages are **queued** automatically and run in order when the current turn ends.
+- While Codex is busy, new messages are **queued** automatically and appear immediately in the native composer queue strip (visible, editable, deletable, steerable), running in order when the current turn ends.
 - The floating panel can **insert** a message directly (it runs ahead of queued messages on the next turn).
-- The queue is fully manageable: view, cancel, reorder, edit.
+- The queue is fully manageable: the native queue strip can view/edit/delete/steer; the floating panel can insert/cancel.
 
 ### 3. Live intermediate output
 
 Codex's execution progress (reasoning summaries, message deltas, tool calls, status events) shows up in the dsh session in near real time — not just the final answer. By default it is display-only and never enters the dsh model context.
+
+Long-running tool calls get a **heartbeat**: while a tool item is open, the composer-dock status line shows `正在执行 <tool>` and, after one minute, the live elapsed time (`已运行 4 分 30 秒`). A multi-minute local command therefore never looks like a hang.
 
 ### 4. Status display
 
@@ -68,7 +70,7 @@ dsh --profile <name>
 
 1. Open any dsh session (cwd is your project).
 2. Type `/codex-lock`: after binding succeeds the header shows a `CDX-xxxx` badge, and input goes straight to Codex.
-3. While Codex is busy, further messages queue automatically; use the floating panel to view/insert/cancel/reorder.
+3. While Codex is busy, further messages queue automatically and show up immediately in the native composer queue strip (edit/delete/steer), running in order when the current turn ends.
 4. `/codex-unlock` disconnects; the Codex thread is kept and can be rebound anytime.
 
 ### Delegation (official baseline, unchanged)

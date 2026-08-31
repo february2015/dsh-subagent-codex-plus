@@ -29,31 +29,59 @@ const text = (text: string) =>
   ({ role: 'user', content: [{ type: 'text', text }] })
 
 const recordedInbox = {
-  append() { /* structural stub: the smoke host carries no real dsh session */ },
+  nextTurn: [] as Array<{ content: Array<{ type: string; text: string }> }>,
+  append(target: string, message: { content: Array<{ type: string; text: string }> }) {
+    if (target === 'next-turn') (this.nextTurn as Array<{ content: Array<{ type: string; text: string }> }>).push(message)
+  },
+  prepend(target: string, message: { content: Array<{ type: string; text: string }> }) {
+    if (target === 'next-turn') (this.nextTurn as Array<{ content: Array<{ type: string; text: string }> }>).unshift(message)
+  },
+  claim(target: string) {
+    return target === 'next-turn' ? this.nextTurn.splice(0, 1) : []
+  },
 } as unknown as GatewayAgentHost['inbox']
 // Structural session stub: the smoke host carries no real dsh session, but the
 // event forwarder (R1-A1) calls `session.append` on every Codex notification.
 const sessionEvents: Array<{ type: string; data: unknown }> = []
 const fakeSession = {
+  events: [] as unknown[],
   append(type: string, data: unknown) {
     sessionEvents.push({ type, data })
     return { seq: sessionEvents.length, type, data, time: Date.now() }
   },
 } as unknown as NonNullable<GatewayAgentHost['session']>
+// Host-side `agent/status` dispatches, as the dsh apiproxy would observe them.
+const statusEvents: string[] = []
+const fakeCtx = {
+  logger: { warn: () => {} },
+  events: {
+    dispatch(kind: string, args: unknown[]): unknown[] {
+      if (kind === 'emit' && args[1] === 'agent/status') {
+        statusEvents.push((args[2] as { status: string }).status)
+      }
+      return []
+    },
+  },
+} as unknown as NonNullable<GatewayAgentHost['ctx']>
 const host = {
   id: 'gateway-agent-smoke',
   session: fakeSession,
   inbox: recordedInbox,
-  ctx: { logger: undefined },
+  ctx: undefined,
   options: { provider: 'codex-plus' },
 } as unknown as GatewayAgentHost
 
 const gateway = new CodexGateway({ cwd: '/tmp', argv: ['codex', 'app-server', '--stdio'] })
 const agent = new GatewayAgent(host, gateway)
+agent.bindCtx(fakeCtx)
 
 let lastTurnEnd = 0
+let completedTurns = 0
 gateway.on('notification', n => {
-  if (n.method === 'turn/completed') lastTurnEnd = Date.now()
+  if (n.method === 'turn/completed') {
+    lastTurnEnd = Date.now()
+    completedTurns++
+  }
 })
 
 try {
@@ -66,14 +94,24 @@ try {
   passed('followup -> running')
   await waitFor('followup completion', () => agent.status === 'idle')
   passed('followup -> idle (turn/completed)')
+  const transitions = [...statusEvents]
+  if (!transitions.includes('running') || !transitions.includes('idle')) {
+    throw new Error(`agent/status: expected running+idle transitions, got ${transitions.join(',')}`)
+  }
+  const repeated = transitions.some((status, index) => index > 0 && status === transitions[index - 1])
+  if (repeated) throw new Error(`agent/status: repeated no-op transition ${transitions.join(',')}`)
+  passed('agent/status emitted on running and idle transitions', transitions.join(' -> '))
   const sessionTypes = sessionEvents.map((event) => event.type)
   for (const expected of ['turn/start', 'step/start', 'assistant/chunk', 'step/end', 'turn/end']) {
     if (!sessionTypes.includes(expected)) throw new Error(`forwarder: missing ${expected}`)
   }
-  if (sessionEvents.some((e) => ['user/message', 'assistant/message', 'tool/result'].includes(e.type))) {
-    throw new Error('forwarder: surface event leaked into the fake session')
+  if (!sessionTypes.includes('user/message') || !sessionTypes.includes('assistant/message')) {
+    throw new Error('forwarder: durable surface user/assistant message missing')
   }
-  passed('forwarder logged intermediate events (no surface pollution)',
+  if (sessionTypes.includes('tool/result')) {
+    throw new Error('forwarder: tool/result leaked into the fake session')
+  }
+  passed('forwarder logged intermediate events + durable surface messages',
     `events=${sessionTypes.join(',')}`)
 
   // whenIdle resolves
@@ -87,6 +125,18 @@ try {
   agent.steer(text('Reply with exactly: STEERED'))
   await steerPromise
   passed('steer redirects active turn')
+
+  // followup while busy -> durable inbox queue, auto-drained into its own turn
+  agent.followup(text('Reply with exactly: BETA'))
+  await waitFor('busy target', () => agent.status === 'running')
+  agent.followup(text('Reply with exactly: QUEUED_OK'))
+  if (recordedInbox.nextTurn.length !== 1) {
+    throw new Error('busy followup: expected 1 inbox-queued prompt')
+  }
+  passed('busy followup queued on the inbox (host queue strip sees it)')
+  const completedBefore = completedTurns
+  await waitFor('queued turn completion', () => agent.status === 'idle' && completedTurns > completedBefore)
+  passed('busy followup auto-drained into its own turn')
 
   // inject merges into the next followup
   agent.inject(text('Context: keep it terse.'))

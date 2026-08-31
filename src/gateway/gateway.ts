@@ -11,6 +11,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { ActiveToolTracker, type ActiveTool } from './tool-tracker.ts'
 import {
   CodexGatewayWire,
   type CodexGatewayNotification,
@@ -74,6 +75,7 @@ export class CodexGateway extends EventEmitter {
   private turnStateValue: CodexGatewayTurnState = 'idle'
   private threadIdValue: string | undefined
   private turnIdValue: string | undefined
+  private readonly tools = new ActiveToolTracker()
   private exitPromise: Promise<number | null> | undefined
 
   constructor(options: CodexGatewayOptions) {
@@ -104,6 +106,11 @@ export class CodexGateway extends EventEmitter {
   /** Active turn id, present between `turn/started` and `turn/completed`. */
   get turnId(): string | undefined {
     return this.turnIdValue
+  }
+
+  /** Tool call currently executing inside the active turn, if any. */
+  get currentTool(): ActiveTool | undefined {
+    return this.tools.current
   }
 
   /**
@@ -260,14 +267,24 @@ export class CodexGateway extends EventEmitter {
     switch (notification.method) {
       case 'turn/started':
         {
+          this.tools.reset()
           const turn = notification.params.turn as { readonly id?: unknown } | undefined
           this.turnIdValue = readString(turn?.id)
           this.setTurnState('running')
           break
         }
       case 'turn/completed':
+        this.tools.reset()
         this.turnIdValue = undefined
         this.setTurnState('idle')
+        break
+      case 'item/started':
+        // Brackets one tool execution; the heartbeat keeps the UI alive while
+        // a long local command runs (no streamed output until it completes).
+        this.tools.onItemStarted(notification.params)
+        break
+      case 'item/completed':
+        this.tools.onItemCompleted(notification.params)
         break
       default:
         break

@@ -317,4 +317,9 @@ export class GatewayEventForwarder {
   private appendSurface(type: 'user/message' | 'assistant/message', data: unknown): void {
     void this.appendBound(type, data, { surfaceOp: 'append' })
   }
+
+  /** dsh turn ordinal the next `turn/started` will open (for inbox claims). */
+  nextTurnOrdinal(): number {
+    return this.turn + 1
+  }
 }
