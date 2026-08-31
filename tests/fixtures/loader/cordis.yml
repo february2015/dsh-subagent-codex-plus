@@ -1,7 +1,24 @@
-# Test-only composition of the Bundle-supplied default and two named Codex instances.
-# The owning e2e applies the package's real patch and never invokes the model or Codex.
+# Test-only composition of the fork (dsh-subagent-codex-plus): base services, two
+# named Codex instances, and the tool rows. The owning e2e applies the package's
+# real Bundle patch (which inserts the default `codex-plus` instance) and never
+# invokes the model or Codex.
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+
+- id: system-prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+- id: jobs
+  name: '@deepseek-ai/dsh-jobs-local'
+
 - id: fixture
-  name: './fixture.ts'
+  name: './fixture.mjs'
 
 - id: subagent
   name: '@deepseek-ai/dsh-subagent'
@@ -10,13 +27,13 @@
   name: '@deepseek-ai/dsh-subprocess-local'
 
 - id: subagent-codex-primary
-  name: '@deepseek-ai/dsh-subagent-codex'
+  name: 'dsh-subagent-codex-plus'
   config:
     providerName: codex-primary
     model: codex-primary-model
 
 - id: subagent-codex-secondary
-  name: '@deepseek-ai/dsh-subagent-codex'
+  name: 'dsh-subagent-codex-plus'
   config:
     providerName: codex-secondary
     model: codex-secondary-model
@@ -24,7 +41,7 @@
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
-    provider: codex
+    provider: codex-plus
     toolName: subagent_codex
     backgroundMode: one-shot
     maxDepth: 'provider-managed'
@@ -44,22 +61,3 @@
     toolName: subagent_codex_secondary
     backgroundMode: one-shot
     maxDepth: 'provider-managed'
-
-- id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
-  config:
-    agents:
-      - id: main
-        provider: mock
-        model: mock-delegate
-        cwd: !!js process.cwd()
-    persona: 'This composition test must not start a model turn.'
-    workspaceContext: false
-
-- id: persistence
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
-  config:
-    root: './.sessions'
-
-- id: checkpoint-policy
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'

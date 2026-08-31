@@ -11,7 +11,7 @@ const fixtureDir = fileURLToPath(new URL(
   './fixtures/loader/',
   import.meta.url,
 ))
-const driver = join(fixtureDir, 'driver.ts')
+const driver = join(fixtureDir, 'driver.mjs')
 const configPath = join(fixtureDir, 'cordis.yml')
 const packageDir = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
@@ -20,18 +20,21 @@ const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8
 const bundlePatch = manifest.dsh?.bundle?.patch
 if (bundlePatch === undefined) throw new Error('Codex package must declare a Bundle patch')
 const bundlePatchPath = join(packageDir, bundlePatch)
-const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
-describe('Codex provider public Loader composition', () => {
+describe('dsh-subagent-codex-plus public Loader composition', () => {
   it('loads the Bundle default, two named instances, their tools, and job controls without starting Codex', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
-      label: 'subagent-codex Loader composition',
-      tempDirPrefix: 'dsh-subagent-codex-loader-',
+      label: 'dsh-subagent-codex-plus Loader composition',
+      tempDirPrefix: 'dsh-subagent-codex-plus-loader-',
+      // 'lib' mode: plain Node running real package `exports` (as an installed
+      // consumer does). 'src' mode would spawn `node --import tsx`, and tsx's
+      // bundled register file ships a corrupted inline source map that trips
+      // vitest-4's error-stack mapping.
+      mode: 'lib',
       binScript: driver,
       libBinScript: driver,
       configPath,
       binArgs: [configPath, bundlePatchPath],
-      tsconfigPath: repoTsconfig,
       env: {
         // Loading the optional package must not probe or start a Codex binary.
         PATH: '',
@@ -40,12 +43,11 @@ describe('Codex provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      providers: ['codex-primary', 'codex-secondary', 'codex'],
+      providers: ['codex-plus', 'codex-primary', 'codex-secondary'],
       providerDetails: [
         {
-          name: 'codex',
+          name: 'codex-plus',
           capabilities: {
-            agentOptions: false,
             outputSchema: false,
             depthLimit: false,
             toolFilter: false,
@@ -56,7 +58,6 @@ describe('Codex provider public Loader composition', () => {
         {
           name: 'codex-primary',
           capabilities: {
-            agentOptions: false,
             outputSchema: false,
             depthLimit: false,
             toolFilter: false,
@@ -67,7 +68,6 @@ describe('Codex provider public Loader composition', () => {
         {
           name: 'codex-secondary',
           capabilities: {
-            agentOptions: false,
             outputSchema: false,
             depthLimit: false,
             toolFilter: false,

@@ -362,15 +362,17 @@ describe('task admission and package contracts', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
       files?: string[]
       dsh?: { bundle?: { patch?: string } }
     }
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.files).toContain('cordis.patch.yml')
-    expect(manifest.dependencies).toHaveProperty(
-      '@deepseek-ai/dsh-sdk-protocol',
-      'workspace:^',
-    )
+    // The fork follows the official convention: every runtime `@deepseek-ai/dsh-*`
+    // protocol package is a peer dependency provided by the host; only schemastery
+    // and the codex binary ship as real dependencies.
+    expect(manifest.peerDependencies).toHaveProperty('@deepseek-ai/dsh-sdk-protocol')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-sdk-protocol')
     expect(manifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
 
@@ -395,13 +397,15 @@ describe('task admission and package contracts', () => {
       '--stdio',
     ])
 
-    const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
+    const lockfile = readFileSync(resolve(root, 'package-lock.json'), 'utf8')
     for (const packageName of CODEX_PLATFORM_PACKAGES) {
       const suffix = packageName.slice('@openai/codex-'.length)
-      expect(lockfile).toContain(`  '@openai/codex@${CODEX_VERSION}-${suffix}':`)
+      // npm lockfile: the alias map inside @openai/codex's optionalDependencies,
+      // plus one resolved platform package entry per OS/arch pair.
       expect(lockfile).toContain(
-        `      '${packageName}': '@openai/codex@${CODEX_VERSION}-${suffix}'`,
+        `"@openai/codex-${suffix}": "npm:@openai/codex@${CODEX_VERSION}-${suffix}"`,
       )
+      expect(lockfile).toContain(`"version": "${CODEX_VERSION}-${suffix}",`)
     }
 
     const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
@@ -409,8 +413,8 @@ describe('task admission and package contracts', () => {
       ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
       : []
     expect(rows).toEqual([{
-      id: 'subagent-codex',
-      name: '@deepseek-ai/dsh-subagent-codex',
+      id: 'subagent-codex-plus',
+      name: 'dsh-subagent-codex-plus',
     }])
     expect(JSON.stringify(rows)).not.toContain('tool-subagent')
   })
@@ -432,9 +436,9 @@ describe('task admission and package contracts', () => {
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
     const fiber = await ctx.plugin(codex, {})
-    const provider = ctx.subagents.getProvider('codex')!
+    const provider = ctx.subagents.getProvider('codex-plus')!
     expect(provider).toMatchObject({
-      name: 'codex',
+      name: 'codex-plus',
       capabilities: {
         outputSchema: false,
         depthLimit: false,
@@ -443,7 +447,7 @@ describe('task admission and package contracts', () => {
       },
       inheritsParentContext: false,
     })
-    expect(ctx.subagents.list()).toEqual(['codex'])
+    expect(ctx.subagents.list()).toEqual(['codex-plus'])
     await fiber.dispose()
     expect(ctx.subagents.list()).toEqual([])
 
@@ -577,7 +581,7 @@ describe('task admission and package contracts', () => {
   })
 
   it('accepts an optional non-empty model and the three fixed permission modes', () => {
-    expect(codex.Config({}).providerName).toBe('codex')
+    expect(codex.Config({}).providerName).toBe('codex-plus')
     expect(codex.Config({}).model).toBeUndefined()
     expect(codex.Config({ providerName: 'codex-safe' }).providerName)
       .toBe('codex-safe')
@@ -600,8 +604,8 @@ describe('task admission and package contracts', () => {
     const child = fakeChild()
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue(child.handle)
     codex.apply(ctx, { env: {}, disposeGraceMs: 3_000 })
-    expect(ctx.subagents.getProvider('codex')).toBeDefined()
-    const starting = ctx.subagents.start('codex', request())
+    expect(ctx.subagents.getProvider('codex-plus')).toBeDefined()
+    const starting = ctx.subagents.start('codex-plus', request())
     const initialize = await child.peer.nextMethod('initialize')
     child.peer.respond(initialize, { userAgent: 'codex-cli 0.149.1' })
     await child.peer.nextMethod('initialized')
@@ -694,7 +698,7 @@ describe('task admission and package contracts', () => {
     const spawn = vi.spyOn(ctx.subprocess, 'spawn')
     await ctx.plugin(codex, {})
 
-    await expect(ctx.subagents.start('codex', {
+    await expect(ctx.subagents.start('codex-plus', {
       prompt: [{ type: 'text', text: 'task' }],
       parent: {
         id: 'parent-without-cwd',
@@ -702,7 +706,7 @@ describe('task admission and package contracts', () => {
       } as unknown as Agent,
       signal: new AbortController().signal,
     })).rejects.toThrow(
-      'subagent-codex: no working directory for the child — delegate from a parent session that has one',
+      'subagent-codex-plus: no working directory for the child — delegate from a parent session that has one',
     )
     expect(spawn).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
@@ -710,7 +714,7 @@ describe('task admission and package contracts', () => {
 
   it('keeps the namespace export shape and package-owned empty invariant', async () => {
     expect('default' in codex).toBe(false)
-    expect(codex.name).toBe('subagent-codex')
+    expect(codex.name).toBe('subagent-codex-plus')
     expect(codex.inject).toEqual(['subagents', 'subprocess'])
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(codex)).toBe(codex)
@@ -723,12 +727,12 @@ describe('task admission and package contracts', () => {
     const ctx = { invariants: { register } } as unknown as Context
     await expect(invariant.apply(ctx)).resolves.toBe(dispose)
     expect(register).toHaveBeenCalledWith(
-      '@deepseek-ai/dsh-subagent-codex',
+      'dsh-subagent-codex-plus',
       expect.any(Function),
     )
     const install = register.mock.calls[0]![1]
     await install(new Context(), (message) => { throw new Error(message) })
-    expect(invariant.name).toBe('subagent-codex-invariant')
+    expect(invariant.name).toBe('subagent-codex-plus-invariant')
     expect(invariant.inject).toEqual(['invariants'])
   })
 })
@@ -1675,7 +1679,7 @@ describe('run lifecycle and quiescence', () => {
         stopReason: 'error',
       })
       expect(errors.at(-1)).toBe(
-        `subagent-codex: ${expectedFailureDiagnostic('process', 'process', { outcome })}`,
+        `subagent-codex-plus: ${expectedFailureDiagnostic('process', 'process', { outcome })}`,
       )
       await run.dispose().catch(() => {})
     }
@@ -2229,8 +2233,10 @@ describe('run lifecycle and quiescence', () => {
       cwd: process.cwd(),
     }))
     expect(warnings).toEqual([
+      // Default gateway install skips in lean compositions without agents/sessions.
+      '[codex-plus] installGateway skipped: agents/sessions missing',
       expect.stringContaining(
-        `subagent-codex "codex-diagnostic": child run failed (error): subagent-codex: ${expectedFailureDiagnostic('turn', 'product-error')}`,
+        `subagent-codex-plus "codex-diagnostic": child run failed (error): subagent-codex-plus: ${expectedFailureDiagnostic('turn', 'product-error')}`,
       ),
     ])
     expect(warnings.join('\n')).not.toContain('SECRET_TOKEN')
