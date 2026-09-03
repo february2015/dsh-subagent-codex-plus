@@ -147,14 +147,22 @@ export async function attachGateway(
     threadId,
     detach: async () => {
       detachAgent()
+      await gateway.dispose()
+      await imageResolver.dispose()
       // The session entry was installed by the superseded loop creation and
       // stays live through the attachment (the UI keeps rendering it). Retire
       // it through the entry's own teardown so `session/disposed` fires: the
       // persistence coordinator releases its live-owner claim on that event,
       // which the host's ordinary resume path requires on the next prompt.
-      detachSessionEntry(ctx.get('sessions'), sessionId)
-      await gateway.dispose()
-      await imageResolver.dispose()
+      //
+      // Retirement is deferred to a macrotask: the slash-command executor
+      // appends `command/done` to this session immediately after the detach
+      // handler settles (same microtask turn — e.g. `/codex-unlock`). If the
+      // entry were already retired, that final append would be unpublished
+      // and unpersisted, stranding the command card in its running state
+      // (`command/run` without `command/done`) forever. Deferring lets the
+      // final event publish on the live entry before the claim release.
+      void setTimeout(() => { detachSessionEntry(ctx.get('sessions'), sessionId) }, 0)
     },
   }
 }
